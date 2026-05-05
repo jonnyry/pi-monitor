@@ -30,7 +30,9 @@ PING_COUNT  = 4
 
 def run(cmd, fallback="N/A"):
     try:
-        return subprocess.check_output(cmd, shell=True, stderr=subprocess.DEVNULL, text=True).strip()
+        env = os.environ.copy()
+        env["PATH"] = "/usr/sbin:/usr/local/sbin:/sbin:" + env.get("PATH", "/usr/bin:/bin")
+        return subprocess.check_output(cmd, shell=True, stderr=subprocess.DEVNULL, text=True, env=env).strip()
     except Exception:
         return fallback
 
