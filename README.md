@@ -33,7 +33,7 @@ python3 pi_monitor.py -o /var/www/html/index.html
 ### Cron setup
 
 ```cron
-*/5 * * * * /usr/bin/python3 /home/pi/pi_monitor.py --output /var/www/html/index.html
+*/5 * * * * /usr/bin/python3 /home/pi/pi_monitor.py --output /var/www/html/index.html > /dev/null
 ```
 
 The generated page auto-refreshes every 5 minutes to match.
