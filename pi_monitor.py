@@ -25,6 +25,7 @@ SCRIPT_DIR  = Path(__file__).resolve().parent
 OUTPUT_PATH = SCRIPT_DIR / "pi_monitor.html"  # change if needed
 PING_HOST   = "8.8.8.8"
 PING_COUNT  = 4
+TAILSCALE_CONTAINER = "tailscale"
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -33,6 +34,14 @@ def run(cmd, fallback="N/A"):
         env = os.environ.copy()
         env["PATH"] = "/usr/sbin:/usr/local/sbin:/sbin:" + env.get("PATH", "/usr/bin:/bin")
         return subprocess.check_output(cmd, shell=True, stderr=subprocess.DEVNULL, text=True, env=env).strip()
+    except Exception:
+        return fallback
+
+def run_cmd(cmd, fallback=None):
+    try:
+        env = os.environ.copy()
+        env["PATH"] = "/usr/sbin:/usr/local/sbin:/sbin:" + env.get("PATH", "/usr/bin:/bin")
+        return subprocess.check_output(cmd, stderr=subprocess.DEVNULL, text=True, env=env).strip()
     except Exception:
         return fallback
 
@@ -196,6 +205,62 @@ def get_ethernet():
     speed = run(f"cat /sys/class/net/{iface}/speed 2>/dev/null")
     speed_str = f"{speed} Mbps" if speed not in ("N/A", "-1", "") else "N/A"
     return {"iface": iface, "state": state, "ip": ip or "N/A", "speed": speed_str}
+
+def get_tailscale():
+    sources = [
+        ("native", ["tailscale", "status", "--json"]),
+        ("docker", ["docker", "exec", TAILSCALE_CONTAINER, "tailscale", "status", "--json"]),
+    ]
+
+    raw = None
+    source = "none"
+    for label, cmd in sources:
+        raw = run_cmd(cmd)
+        if raw:
+            source = label
+            break
+
+    if not raw:
+        return {
+            "available": False,
+            "source": source,
+            "state": "unavailable",
+            "error": "tailscale not found natively or via Docker",
+        }
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return {
+            "available": False,
+            "source": source,
+            "state": "invalid",
+            "error": "tailscale returned invalid JSON",
+        }
+
+    self_info = data.get("Self") or {}
+    peers = list((data.get("Peer") or {}).values())
+    online_peers = [p for p in peers if p.get("Online")]
+    active_peers = [p for p in peers if p.get("Active")]
+
+    relays = {}
+    for p in peers:
+        relay = p.get("Relay")
+        if relay:
+            relays[relay] = relays.get(relay, 0) + 1
+
+    return {
+        "available": True,
+        "source": source,
+        "state": data.get("BackendState", "unknown"),
+        "hostname": self_info.get("HostName", "N/A"),
+        "dns": self_info.get("DNSName", "N/A").rstrip("."),
+        "ips": self_info.get("TailscaleIPs", []),
+        "online_peers": len(online_peers),
+        "total_peers": len(peers),
+        "active_peers": len(active_peers),
+        "relays": relays,
+    }
 
 def get_ping():
     raw = run(f"ping -c {PING_COUNT} -W 2 {PING_HOST} 2>/dev/null")
@@ -380,6 +445,32 @@ def build_html(d):
             <span class="k">State</span><span class="v">{status_dot(state_ok)} {h(e['state'])}</span>
             <span class="k">IP</span><span class="v"><code>{h(e['ip'])}</code></span>
             <span class="k">Speed</span><span class="v">{h(e['speed'])}</span>
+          </div>
+        </div>"""
+
+    # tailscale
+    ts = d.get("tailscale", {})
+    state = ts.get("state", "unknown")
+    available = ts.get("available", False)
+    state_ok = available and state == "Running"
+    ips = ", ".join(ts.get("ips") or ["N/A"])
+    relay_summary = ", ".join(f"{name}: {count}" for name, count in sorted(ts.get("relays", {}).items())) or "None"
+    error_html = ""
+    if ts.get("error"):
+        error_html = f'<span class="k">Error</span><span class="v crit">{h(ts["error"])}</span>'
+    tailscale_html = f"""
+        <div class="card">
+          <div class="card-title">Tailscale</div>
+          <div class="kv-grid">
+            <span class="k">State</span><span class="v">{status_dot(state_ok)} {h(state)}</span>
+            <span class="k">Source</span><span class="v">{h(ts.get('source', 'unknown'))}</span>
+            <span class="k">Device</span><span class="v">{h(ts.get('hostname', 'N/A'))}</span>
+            <span class="k">DNS</span><span class="v"><code>{h(ts.get('dns', 'N/A'))}</code></span>
+            <span class="k">IP</span><span class="v"><code>{h(ips)}</code></span>
+            <span class="k">Peers</span><span class="v">{ts.get('online_peers', 0)} / {ts.get('total_peers', 0)} online</span>
+            <span class="k">Active</span><span class="v">{ts.get('active_peers', 0)}</span>
+            <span class="k">Relays</span><span class="v">{h(relay_summary)}</span>
+            {error_html}
           </div>
         </div>"""
 
@@ -703,6 +794,7 @@ def build_html(d):
 
   {wifi_html}
   {eth_html}
+  {tailscale_html}
 
 </div>
 
@@ -797,6 +889,7 @@ def main():
         "disks":        get_disks(),
         "wifi":         get_wifi(),
         "eth":          get_ethernet(),
+        "tailscale":    get_tailscale(),
         "ping":         get_ping(),
         "processes":    get_processes(),
         "gpu_mem":      get_gpu_memory(),
