@@ -25,6 +25,7 @@ SCRIPT_DIR  = Path(__file__).resolve().parent
 OUTPUT_PATH = SCRIPT_DIR / "pi_monitor.html"  # change if needed
 PING_HOST   = "8.8.8.8"
 PING_COUNT  = 4
+TAILSCALE_ENABLED = False
 TAILSCALE_CONTAINER = "tailscale"
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -449,16 +450,18 @@ def build_html(d):
         </div>"""
 
     # tailscale
-    ts = d.get("tailscale", {})
-    state = ts.get("state", "unknown")
-    available = ts.get("available", False)
-    state_ok = available and state == "Running"
-    ips = ", ".join(ts.get("ips") or ["N/A"])
-    relay_summary = ", ".join(f"{name}: {count}" for name, count in sorted(ts.get("relays", {}).items())) or "None"
-    error_html = ""
-    if ts.get("error"):
-        error_html = f'<span class="k">Error</span><span class="v crit">{h(ts["error"])}</span>'
-    tailscale_html = f"""
+    tailscale_html = ""
+    if d.get("tailscale"):
+        ts = d["tailscale"]
+        state = ts.get("state", "unknown")
+        available = ts.get("available", False)
+        state_ok = available and state == "Running"
+        ips = ", ".join(ts.get("ips") or ["N/A"])
+        relay_summary = ", ".join(f"{name}: {count}" for name, count in sorted(ts.get("relays", {}).items())) or "None"
+        error_html = ""
+        if ts.get("error"):
+            error_html = f'<span class="k">Error</span><span class="v crit">{h(ts["error"])}</span>'
+        tailscale_html = f"""
         <div class="card">
           <div class="card-title">Tailscale</div>
           <div class="kv-grid">
@@ -871,6 +874,12 @@ def main():
         default=None,
         help=f"Where to write the HTML file (default: {OUTPUT_PATH})",
     )
+    parser.add_argument(
+        "--tailscale",
+        action="store_true",
+        default=TAILSCALE_ENABLED,
+        help="Include an optional Tailscale status panel (default: off)",
+    )
     args = parser.parse_args()
 
     output_path = Path(args.output) if args.output else OUTPUT_PATH
@@ -889,7 +898,7 @@ def main():
         "disks":        get_disks(),
         "wifi":         get_wifi(),
         "eth":          get_ethernet(),
-        "tailscale":    get_tailscale(),
+        "tailscale":    get_tailscale() if args.tailscale else None,
         "ping":         get_ping(),
         "processes":    get_processes(),
         "gpu_mem":      get_gpu_memory(),
