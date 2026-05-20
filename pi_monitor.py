@@ -25,10 +25,6 @@ SCRIPT_DIR  = Path(__file__).resolve().parent
 OUTPUT_PATH = SCRIPT_DIR / "pi_monitor.html"  # change if needed
 PING_HOST   = "8.8.8.8"
 PING_COUNT  = 4
-DOCKER_ENABLED = False
-DAGU_ENABLED   = False
-DAGU_URL       = "http://localhost:8080"  # base URL of the local Dagu instance
-DAGU_TOKEN     = ""                       # Bearer token for Dagu API auth
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -37,14 +33,6 @@ def run(cmd, fallback="N/A"):
         env = os.environ.copy()
         env["PATH"] = "/usr/sbin:/usr/local/sbin:/sbin:" + env.get("PATH", "/usr/bin:/bin")
         return subprocess.check_output(cmd, shell=True, stderr=subprocess.DEVNULL, text=True, env=env).strip()
-    except Exception:
-        return fallback
-
-def run_cmd(cmd, fallback=None):
-    try:
-        env = os.environ.copy()
-        env["PATH"] = "/usr/sbin:/usr/local/sbin:/sbin:" + env.get("PATH", "/usr/bin:/bin")
-        return subprocess.check_output(cmd, stderr=subprocess.DEVNULL, text=True, env=env).strip()
     except Exception:
         return fallback
 
@@ -255,98 +243,8 @@ def get_voltage():
         return raw.split("=")[1]
     return None
 
-def get_docker():
-    """Container counts by state. Requires the running user to be in the docker group."""
-    raw = run_cmd(["docker", "ps", "-a", "--format", "{{.Status}}"])
-    if raw is None:
-        return {
-            "available": False,
-            "error": "docker not available (is the user in the docker group?)",
-        }
-
-    healthy   = 0
-    unhealthy = 0
-    stopped   = 0
-
-    for line in raw.splitlines():
-        line_lower = line.lower()
-        if not line_lower.startswith("up"):
-            stopped += 1
-        elif "unhealthy" in line_lower:
-            unhealthy += 1
-        else:
-            healthy += 1
-
-    return {
-        "available": True,
-        "healthy":   healthy,
-        "unhealthy": unhealthy,
-        "stopped":   stopped,
-    }
-
-def get_dagu(url=DAGU_URL, token=DAGU_TOKEN):
-    """DAG-run counts for the last 24 hours from the local Dagu API.
-
-    Uses cursor-based pagination to retrieve all runs in the window.
-    Status groupings:
-      success  — status 4
-      failed   — status 2 (failed), 3 (aborted), 8 (rejected)
-      other    — status 0 (not started), 1 (running), 5 (queued),
-                 6 (partial success), 7 (waiting for approval)
-    """
-    import urllib.request
-    import urllib.parse
-
-    if not token:
-        return {
-            "available": False,
-            "error": "no token provided — pass --dagu-token or set DAGU_TOKEN in the script",
-        }
-
-    FAILED_STATUSES  = {2, 3, 8}
-    SUCCESS_STATUSES = {4}
-
-    now   = int(time.time())
-    since = now - 86400
-
-    success = 0
-    failed  = 0
-    other   = 0
-    cursor  = None
-
-    while True:
-        params = {"fromDate": since, "toDate": now, "limit": 100}
-        if cursor:
-            params["cursor"] = cursor
-        req_url = f"{url.rstrip('/')}/api/v1/dag-runs?{urllib.parse.urlencode(params)}"
-        req = urllib.request.Request(req_url, headers={"Authorization": f"Bearer {token}"})
-        try:
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                data = json.loads(resp.read().decode())
-        except Exception as e:
-            return {"available": False, "error": str(e)}
-
-        for run in data.get("dagRuns", []):
-            status = run.get("status")
-            if status in SUCCESS_STATUSES:
-                success += 1
-            elif status in FAILED_STATUSES:
-                failed += 1
-            else:
-                other += 1
-
-        cursor = data.get("nextCursor")
-        if not cursor:
-            break
-
-    return {
-        "available": True,
-        "success":   success,
-        "failed":    failed,
-        "other":     other,
-    }
-
 # ── New collectors ────────────────────────────────────────────────────────────
+
 
 def get_listening_ports():
     """Listening TCP/UDP ports from /proc/net — no root required."""
@@ -399,17 +297,13 @@ def get_listening_ports():
 
     ports.sort(key=lambda p: int(p["port"]))
     return ports
+
+
 # ── HTML generation ───────────────────────────────────────────────────────────
 
 def pct_color(pct):
     if pct < 60:   return "ok"
     if pct < 85:   return "warn"
-    return "crit"
-
-def invert_pct_color(pct):
-    """For success-rate metrics where higher is better."""
-    if pct >= 100: return "ok"
-    if pct >= 90:  return "warn"
     return "crit"
 
 def temp_color(t):
@@ -486,60 +380,6 @@ def build_html(d):
             <span class="k">State</span><span class="v">{status_dot(state_ok)} {h(e['state'])}</span>
             <span class="k">IP</span><span class="v"><code>{h(e['ip'])}</code></span>
             <span class="k">Speed</span><span class="v">{h(e['speed'])}</span>
-          </div>
-        </div>"""
-
-    # docker
-    docker_html = ""
-    if d.get("docker"):
-        dk = d["docker"]
-        if not dk.get("available"):
-            docker_html = f"""
-        <div class="card">
-          <div class="card-title">Docker</div>
-          <p class="muted">{h(dk.get('error', 'unavailable'))}</p>
-        </div>"""
-        else:
-            dk_total = dk["healthy"] + dk["unhealthy"] + dk["stopped"]
-            dk_pct   = round(100 * dk["healthy"] / dk_total, 1) if dk_total else None
-            dk_cls   = invert_pct_color(dk_pct) if dk_pct is not None else "muted"
-            dk_str   = f"{dk_pct}%" if dk_pct is not None else "N/A"
-            docker_html = f"""
-        <div class="card">
-          <div class="card-title">Docker</div>
-          <div class="big-stat {dk_cls}">{dk_str}</div>
-          <div class="sub">containers running healthy</div>
-          <div style="margin-top:12px" class="kv-grid">
-            <span class="k">Running</span><span class="v ok-text">{dk['healthy']}</span>
-            <span class="k">Unhealthy</span><span class="v {'warn-text' if dk['unhealthy'] > 0 else ''}">{dk['unhealthy']}</span>
-            <span class="k">Stopped</span><span class="v {'crit-text' if dk['stopped'] > 0 else ''}">{dk['stopped']}</span>
-          </div>
-        </div>"""
-
-    # dagu
-    dagu_html = ""
-    if d.get("dagu"):
-        dg = d["dagu"]
-        if not dg.get("available"):
-            dagu_html = f"""
-        <div class="card">
-          <div class="card-title">Dagu (24 h)</div>
-          <p class="muted">{h(dg.get('error', 'unavailable'))}</p>
-        </div>"""
-        else:
-            dg_total = dg["success"] + dg["failed"] + dg["other"]
-            dg_pct   = round(100 * dg["success"] / dg_total, 1) if dg_total else None
-            dg_cls   = invert_pct_color(dg_pct) if dg_pct is not None else "muted"
-            dg_str   = f"{dg_pct}%" if dg_pct is not None else "N/A"
-            dagu_html = f"""
-        <div class="card">
-          <div class="card-title">Dagu (24 h)</div>
-          <div class="big-stat {dg_cls}">{dg_str}</div>
-          <div class="sub">DAG runs succeeded</div>
-          <div style="margin-top:12px" class="kv-grid">
-            <span class="k">Success</span><span class="v ok-text">{dg['success']}</span>
-            <span class="k">Failed</span><span class="v {'crit-text' if dg['failed'] > 0 else ''}">{dg['failed']}</span>
-            <span class="k">Other</span><span class="v {'warn-text' if dg['other'] > 0 else ''}">{dg['other']}</span>
           </div>
         </div>"""
 
@@ -863,8 +703,6 @@ def build_html(d):
 
   {wifi_html}
   {eth_html}
-  {docker_html}
-  {dagu_html}
 
 </div>
 
@@ -941,30 +779,6 @@ def main():
         default=None,
         help=f"Where to write the HTML file (default: {OUTPUT_PATH})",
     )
-    parser.add_argument(
-        "--docker",
-        action="store_true",
-        default=DOCKER_ENABLED,
-        help="Include a Docker container status panel (default: off). Requires the running user to be in the docker group.",
-    )
-    parser.add_argument(
-        "--dagu",
-        action="store_true",
-        default=DAGU_ENABLED,
-        help="Include a Dagu DAG-run summary panel for the last 24 hours (default: off). Requires --dagu-url and --dagu-token.",
-    )
-    parser.add_argument(
-        "--dagu-url",
-        metavar="URL",
-        default=DAGU_URL,
-        help=f"Base URL of the local Dagu instance (default: {DAGU_URL})",
-    )
-    parser.add_argument(
-        "--dagu-token",
-        metavar="TOKEN",
-        default=DAGU_TOKEN,
-        help="Bearer token for Dagu API authentication",
-    )
     args = parser.parse_args()
 
     output_path = Path(args.output) if args.output else OUTPUT_PATH
@@ -983,8 +797,6 @@ def main():
         "disks":        get_disks(),
         "wifi":         get_wifi(),
         "eth":          get_ethernet(),
-        "docker":       get_docker() if args.docker else None,
-        "dagu":         get_dagu(url=args.dagu_url, token=args.dagu_token) if args.dagu else None,
         "ping":         get_ping(),
         "processes":    get_processes(),
         "gpu_mem":      get_gpu_memory(),
