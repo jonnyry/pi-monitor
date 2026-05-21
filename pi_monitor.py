@@ -357,11 +357,14 @@ def build_html(d):
     wifi_html = ""
     if d["wifi"]:
         w = d["wifi"]
+        wifi_connected = w["ssid"] != "N/A"
         wifi_html = f"""
         <div class="card">
           <div class="card-title">Wi-Fi — {h(w['iface'])}</div>
+          <div style="font-size:18px;font-family:var(--mono);font-weight:600;color:var(--head);margin-bottom:10px">
+            {status_dot(wifi_connected)} {h(w['ssid']) if wifi_connected else 'Disconnected'}
+          </div>
           <div class="kv-grid">
-            <span class="k">SSID</span><span class="v">{h(w['ssid'])}</span>
             <span class="k">IP</span><span class="v"><code>{h(w['ip'])}</code></span>
             <span class="k">Signal</span><span class="v">{h(w['signal'])} dBm</span>
             <span class="k">TX Rate</span><span class="v">{h(w['bitrate'])}</span>
@@ -376,8 +379,10 @@ def build_html(d):
         eth_html = f"""
         <div class="card">
           <div class="card-title">Ethernet — {h(e['iface'])}</div>
+          <div style="font-size:18px;font-family:var(--mono);font-weight:600;color:var(--head);margin-bottom:10px">
+            {status_dot(state_ok)} {'Up' if state_ok else 'Down'}
+          </div>
           <div class="kv-grid">
-            <span class="k">State</span><span class="v">{status_dot(state_ok)} {h(e['state'])}</span>
             <span class="k">IP</span><span class="v"><code>{h(e['ip'])}</code></span>
             <span class="k">Speed</span><span class="v">{h(e['speed'])}</span>
           </div>
