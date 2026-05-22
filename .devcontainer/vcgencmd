@@ -1,0 +1,39 @@
+#!/bin/bash
+
+# This is a mock implementation of the `vcgencmd` command, which is used to query various system information on Raspberry Pi devices.
+# This script is intended for use in a development container environment where the actual hardware-specific command may not be available.
+
+case "$1" in
+    measure_clock)
+        if [ "$2" = "arm" ]; then
+            echo "frequency(0)=1500012800"
+        else
+            echo "frequency(0)=0"
+        fi
+        ;;
+
+    measure_temp)
+        echo "temp=37.5'C"
+        ;;
+
+    get_throttled)
+        echo "throttled=0x0"
+        ;;
+
+    get_mem)
+        if [ "$2" = "gpu" ]; then
+            echo "gpu=4M"
+        else
+            echo "$2=0M"
+        fi
+        ;;
+
+    measure_volts)
+        echo "volt=0.7200V"
+        ;;
+
+    *)
+        echo "unknown command: vcgencmd $*"
+        exit 1
+        ;;
+esac
