@@ -1,6 +1,6 @@
 # pi-monitor
 
-A single-file Python script - `pi-monitor.py` - that generates a static HTML health dashboard for a Raspberry Pi. Run it on a cron schedule and serve the output with any web server.
+A single-file Python script (`pi-monitor.py`) that generates a static HTML health dashboard for a Raspberry Pi. Run it on a cron schedule and serve the output with any web server.
 
 ## Screenshots
 
@@ -17,7 +17,6 @@ A single-file Python script - `pi-monitor.py` - that generates a static HTML hea
 - Python 3.7+
 - Standard library only — no pip dependencies
 - Optional: `iw` for Wi-Fi stats, `vcgencmd` for temperature/throttle/voltage (Raspberry Pi firmware tool)
-- Optional: `tailscale` (native) or Docker with a `tailscale` container for the Tailscale panel
 
 ## Usage
 
@@ -55,19 +54,22 @@ At the top of the script:
 
 ## What it monitors
 
+### Core
+
+- **System info** — hostname, uptime, OS, kernel, architecture
 - **CPU** — usage %, load average (1/5/15 min), frequency, core voltage
 - **Temperature** — SoC temperature with throttle status and active throttle flags
 - **Memory** — used/available RAM and swap
-- **Disks** — usage for all non-virtual mounts
-- **Network** — Wi-Fi (SSID, signal, TX rate) and Ethernet (state, speed), both with IP
 - **Connectivity** — ping RTT and packet loss to `PING_HOST`
+- **Ethernet** — state, speed and IP (if your Pi has an Ethernet port)
+- **Wi-Fi** — SSID, signal, TX rate and IP
+- **Disks** — usage for all non-virtual mounts
 - **Listening ports** — TCP/UDP ports read from `/proc/net` (no root required)
 - **Top processes** — top 5 by CPU usage
-- **System info** — hostname, uptime, OS, kernel, architecture
 
-Optionally:
+### Optional
 
-- **Tailscale** — VPN state, Tailscale IP/DNS, peer count, active peers, and relay breakdown; works with native `tailscale` or a Docker-hosted container
+- **Tailscale** — VPN state, Tailscale IP/DNS, peer count, active peers, and relay breakdown
 
 ## Output
 
