@@ -99,9 +99,11 @@ server {
 
 A VS Code devcontainer and `Makefile` are included to make it easy to work on the script without a physical Pi.
 
-### Dev container
+### Devcontainer
 
 Open the repo in VS Code and choose **Reopen in Container**. The container provides Python, Pylance, and Ruff, plus a stub `vcgencmd` so the script runs on non-Pi hardware.
+
+The devcontainer contains a bash script `vcgencmd` that mocks the command of the same name on the Raspberry Pi in order to return metrics such as temperature, CPU voltage, clock speed etc. 
 
 ### Makefile
 
