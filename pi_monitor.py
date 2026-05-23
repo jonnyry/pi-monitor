@@ -318,22 +318,6 @@ def get_voltage():
         return raw.split("=")[1]
     return None
 
-# ── Config file ───────────────────────────────────────────────────────────────
-
-def _load_conf(path):
-    """Parse a KEY = VALUE config file, ignoring blank lines and # comments."""
-    conf = {}
-    try:
-        for line in Path(path).read_text().splitlines():
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            if "=" in line:
-                key, _, val = line.partition("=")
-                conf[key.strip()] = val.strip()
-    except FileNotFoundError:
-        pass
-    return conf
 
 # ── New collectors ────────────────────────────────────────────────────────────
 
@@ -894,18 +878,7 @@ def build_html(d):
 def main():
     import argparse
 
-    global OUTPUT_PATH, PING_HOST, PING_COUNT, TAILSCALE_ENABLED, TAILSCALE_CONTAINER
-    conf = _load_conf(SCRIPT_DIR / "pi_monitor.conf")
-    if "OUTPUT_PATH"         in conf:
-        OUTPUT_PATH         = Path(conf["OUTPUT_PATH"])
-    if "PING_HOST"           in conf:
-        PING_HOST           = conf["PING_HOST"]
-    if "PING_COUNT"          in conf:
-        PING_COUNT          = int(conf["PING_COUNT"])
-    if "TAILSCALE_ENABLED"   in conf:
-        TAILSCALE_ENABLED   = conf["TAILSCALE_ENABLED"].lower() == "true"
-    if "TAILSCALE_CONTAINER" in conf:
-        TAILSCALE_CONTAINER = conf["TAILSCALE_CONTAINER"]
+    global OUTPUT_PATH, PING_HOST, PING_COUNT, TAILSCALE_CONTAINER
 
     parser = argparse.ArgumentParser(
         description="Generate a static HTML monitoring page for this Raspberry Pi."
