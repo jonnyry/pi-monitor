@@ -318,6 +318,23 @@ def get_voltage():
         return raw.split("=")[1]
     return None
 
+# ── Config file ───────────────────────────────────────────────────────────────
+
+def _load_conf(path):
+    """Parse a KEY = VALUE config file, ignoring blank lines and # comments."""
+    conf = {}
+    try:
+        for line in Path(path).read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" in line:
+                key, _, val = line.partition("=")
+                conf[key.strip()] = val.strip()
+    except FileNotFoundError:
+        pass
+    return conf
+
 # ── New collectors ────────────────────────────────────────────────────────────
 
 
