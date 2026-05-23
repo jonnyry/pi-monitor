@@ -24,6 +24,12 @@ A single-file Python script (`pi-monitor.py`) that generates a static HTML healt
 # Write to the default location (same directory as the script)
 python3 pi_monitor.py
 
+# Output to a different location
+python3 /home/pi/pi_monitor.py --output /var/www/html/index.html
+
+# Enable the tailscale panel
+python3 /home/pi/pi_monitor.py --tailscale
+
 # See all options
 python3 pi_monitor.py --help
 ```
@@ -48,7 +54,7 @@ The generated page auto-refreshes every 5 minutes to match.
 
 ## Configuration file
 
-For settings you want to persist without modifying the cron line, copy the sample config and edit it:
+The configuration file is not required.  However for settings you want to persist without modifying the cron line, copy the sample config and edit it:
 
 ```bash
 cp pi_monitor.conf.sample pi_monitor.conf
@@ -63,7 +69,7 @@ TAILSCALE_ENABLED = false
 TAILSCALE_CONTAINER = tailscale
 ```
 
-The file is loaded from the same directory as the script. Command-line arguments always take precedence over values set in the config file. `pi_monitor.conf` is gitignored so your local settings won't appear as uncommitted changes.
+The file is loaded from the same directory as the script. Command-line arguments take precedence over values set in the config file. `pi_monitor.conf` is gitignored so your local settings won't appear as uncommitted changes.
 
 ## What it monitors
 
