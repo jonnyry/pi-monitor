@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """
-pi_monitor.py — Raspberry Pi health dashboard generator
+pi_monitor.py — Raspberry Pi static HTML health dashboard generator
+
 Run via cron every 5 minutes:
   */5 * * * * /usr/bin/python3 /home/pi/pi_monitor.py
 
-Output defaults to pi_monitor.html in the same directory as this script.
-Override at runtime with --output / -o:
-  python3 pi_monitor.py --output /var/www/html/index.html
-Or change OUTPUT_PATH below for a permanent default.
+Run with --help for options:
+  python3 pi_monitor.py --help
+
+Copyright (c) 2026 Jonny Rylands
+Licensed under the MIT License — see https://github.com/jonnyry/pi_monitor
 """
 
 import subprocess
@@ -315,6 +317,23 @@ def get_voltage():
     if "=" in raw:
         return raw.split("=")[1]
     return None
+
+# ── Config file ───────────────────────────────────────────────────────────────
+
+def _load_conf(path):
+    """Parse a KEY = VALUE config file, ignoring blank lines and # comments."""
+    conf = {}
+    try:
+        for line in Path(path).read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" in line:
+                key, _, val = line.partition("=")
+                conf[key.strip()] = val.strip()
+    except FileNotFoundError:
+        pass
+    return conf
 
 # ── New collectors ────────────────────────────────────────────────────────────
 
@@ -874,24 +893,37 @@ def build_html(d):
 
 def main():
     import argparse
+
+    global OUTPUT_PATH, PING_HOST, PING_COUNT, TAILSCALE_ENABLED, TAILSCALE_CONTAINER
+    conf = _load_conf(SCRIPT_DIR / "pi_monitor.conf")
+    if "OUTPUT_PATH"         in conf:
+        OUTPUT_PATH         = Path(conf["OUTPUT_PATH"])
+    if "PING_HOST"           in conf:
+        PING_HOST           = conf["PING_HOST"]
+    if "PING_COUNT"          in conf:
+        PING_COUNT          = int(conf["PING_COUNT"])
+    if "TAILSCALE_ENABLED"   in conf:
+        TAILSCALE_ENABLED   = conf["TAILSCALE_ENABLED"].lower() == "true"
+    if "TAILSCALE_CONTAINER" in conf:
+        TAILSCALE_CONTAINER = conf["TAILSCALE_CONTAINER"]
+
     parser = argparse.ArgumentParser(
         description="Generate a static HTML monitoring page for this Raspberry Pi."
     )
-    parser.add_argument(
-        "--output", "-o",
-        metavar="PATH",
-        default=None,
-        help=f"Where to write the HTML file (default: {OUTPUT_PATH})",
-    )
-    parser.add_argument(
-        "--tailscale",
-        action="store_true",
-        default=TAILSCALE_ENABLED,
-        help="Include an optional Tailscale status panel (default: off)",
-    )
+    parser.add_argument("--output", "-o", metavar="PATH", default=None, help=f"Where to write the HTML file (default: {OUTPUT_PATH})")
+    parser.add_argument("--ping-host", metavar="HOST", default=None, help=f"Host to ping for connectivity check (default: {PING_HOST})")
+    parser.add_argument("--ping-count", metavar="N", type=int, default=None, help=f"Number of ping packets (default: {PING_COUNT})")
+    parser.add_argument("--tailscale", action="store_true", default=TAILSCALE_ENABLED, help="Include Tailscale status panel")
+    parser.add_argument("--tailscale-container", metavar="NAME", default=None, help=f"Docker container name for Tailscale (default: {TAILSCALE_CONTAINER})")
     args = parser.parse_args()
 
     output_path = Path(args.output) if args.output else OUTPUT_PATH
+    if args.ping_host:
+        PING_HOST = args.ping_host
+    if args.ping_count:
+        PING_COUNT = args.ping_count
+    if args.tailscale_container:
+        TAILSCALE_CONTAINER = args.tailscale_container
 
     data = {
         "hostname":     get_hostname(),

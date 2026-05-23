@@ -24,13 +24,19 @@ A single-file Python script (`pi-monitor.py`) that generates a static HTML healt
 # Write to the default location (same directory as the script)
 python3 pi_monitor.py
 
-# Write to a custom path
-python3 pi_monitor.py --output /var/www/html/index.html
-python3 pi_monitor.py -o /var/www/html/index.html
-
-# Enable the optional Tailscale status panel
-python3 pi_monitor.py --tailscale
+# See all options
+python3 pi_monitor.py --help
 ```
+
+### Command-line options
+
+| Option | Default | Description |
+|---|---|---|
+| `--output`, `-o` | `pi_monitor.html` next to the script | Where to write the HTML file |
+| `--ping-host` | `8.8.8.8` | Host to ping for the connectivity check |
+| `--ping-count` | `4` | Number of ping packets to send |
+| `--tailscale` | off | Enable the Tailscale status panel |
+| `--tailscale-container` | `tailscale` | Docker container name to query when native `tailscale` is not found |
 
 ### Cron setup
 
@@ -40,17 +46,24 @@ python3 pi_monitor.py --tailscale
 
 The generated page auto-refreshes every 5 minutes to match.
 
-## Configuration
+## Configuration file
 
-At the top of the script:
+For settings you want to persist without modifying the cron line, copy the sample config and edit it:
 
-| Variable | Default | Description |
-|---|---|---|
-| `OUTPUT_PATH` | `pi_monitor.html` next to the script | Default output path |
-| `PING_HOST` | `8.8.8.8` | Host used for connectivity check |
-| `PING_COUNT` | `4` | Number of ping packets |
-| `TAILSCALE_ENABLED` | `False` | Enable Tailscale panel by default (or use `--tailscale` flag) |
-| `TAILSCALE_CONTAINER` | `tailscale` | Docker container name to query when native `tailscale` is not found |
+```bash
+cp pi_monitor.conf.sample pi_monitor.conf
+```
+
+```ini
+# pi_monitor.conf
+OUTPUT_PATH = /var/www/html/index.html
+PING_HOST = 8.8.8.8
+PING_COUNT = 4
+TAILSCALE_ENABLED = false
+TAILSCALE_CONTAINER = tailscale
+```
+
+The file is loaded from the same directory as the script. Command-line arguments always take precedence over values set in the config file. `pi_monitor.conf` is gitignored so your local settings won't appear as uncommitted changes.
 
 ## What it monitors
 
