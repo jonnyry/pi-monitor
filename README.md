@@ -52,25 +52,6 @@ python3 pi_monitor.py --help
 
 The generated page auto-refreshes every 5 minutes to match.
 
-## Configuration file
-
-The configuration file is not required.  However for settings you want to persist without modifying the cron line, copy the sample config and edit it:
-
-```bash
-cp pi_monitor.conf.sample pi_monitor.conf
-```
-
-```ini
-# pi_monitor.conf
-OUTPUT_PATH = /var/www/html/index.html
-PING_HOST = 8.8.8.8
-PING_COUNT = 4
-TAILSCALE_ENABLED = false
-TAILSCALE_CONTAINER = tailscale
-```
-
-The file is loaded from the same directory as the script. Command-line arguments take precedence over values set in the config file. `pi_monitor.conf` is gitignored so your local settings won't appear as uncommitted changes.
-
 ## What it monitors
 
 ### Core
