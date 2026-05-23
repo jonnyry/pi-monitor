@@ -2,7 +2,7 @@ FROM mcr.microsoft.com/devcontainers/python:3.11
 
 RUN sudo apt update 
     && sudo apt install -y --no-install-recommends \
-        inetutils-ping \
+        iputils-ping \
         iw \
     && rm -rf /var/lib/apt/lists/*
 
