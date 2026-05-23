@@ -273,6 +273,13 @@ def get_ping():
     avg    = float(rtt_m.group(1)) if rtt_m else None
     return loss == 0, loss, avg
 
+def get_wan_ip():
+    for url in ("https://api.ipify.org", "https://icanhazip.com", "https://ifconfig.me"):
+        result = run(f"curl -s --max-time 5 {url}")
+        if result and result != "N/A" and re.match(r"^\d+\.\d+\.\d+\.\d+$", result.strip()):
+            return result.strip()
+    return None
+
 def get_processes():
     raw = run("top -bn2 -d0.5 | grep -A 20 'PID' | tail -20")
     procs = []
@@ -497,6 +504,7 @@ def build_html(d):
     ping_str      = f"{ping_avg} ms" if ping_avg else "—"
     ping_loss_str = f"{ping_loss}% loss" if ping_loss is not None else "—"
     ping_ok_val   = ping_ok if ping_ok is not None else False
+    wan_ip_str    = h(d["wan_ip"]) if d.get("wan_ip") else "—"
     gpu_html  = f'<span class="k">GPU RAM</span><span class="v">{h(d["gpu_mem"])}</span>' if d["gpu_mem"] else ""
     volt_html = f'<span class="k">Core voltage</span><span class="v">{h(d["voltage"])}</span>' if d["voltage"] else ""
     la1, la5, la15 = d["load"]
@@ -789,7 +797,8 @@ def build_html(d):
       {status_dot(ping_ok_val)} {'Reachable' if ping_ok_val else 'Unreachable'}
     </div>
     <div class="kv-grid">
-      <span class="k">Target</span><span class="v">{PING_HOST}</span>
+      <span class="k">Public IP</span><span class="v"><code>{wan_ip_str}</code></span>
+      <span class="k">Ping target</span><span class="v">{PING_HOST}</span>
       <span class="k">Avg RTT</span><span class="v {('ok' if ping_ok_val else 'crit')}">{ping_str}</span>
       <span class="k">Packet loss</span><span class="v {('ok' if ping_ok_val else 'crit')}">{ping_loss_str}</span>
     </div>
@@ -900,6 +909,7 @@ def main():
         "eth":          get_ethernet(),
         "tailscale":    get_tailscale() if args.tailscale else None,
         "ping":         get_ping(),
+        "wan_ip":       get_wan_ip(),
         "processes":    get_processes(),
         "gpu_mem":      get_gpu_memory(),
         "voltage":      get_voltage(),

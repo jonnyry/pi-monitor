@@ -60,7 +60,7 @@ At the top of the script:
 - **CPU** — usage %, load average (1/5/15 min), frequency, core voltage
 - **Temperature** — SoC temperature with throttle status and active throttle flags
 - **Memory** — used/available RAM and swap
-- **Connectivity** — ping RTT and packet loss to `PING_HOST`
+- **Connectivity** — public IP, ping RTT and packet loss to `PING_HOST`
 - **Ethernet** — state, speed and IP (if your Pi has an Ethernet port)
 - **Wi-Fi** — SSID, signal, TX rate and IP
 - **Disks** — usage for all non-virtual mounts
