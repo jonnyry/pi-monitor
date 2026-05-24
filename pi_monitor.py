@@ -433,9 +433,13 @@ def build_html(d):
     wifi_html = ""
     if d["wifi"]:
         w = d["wifi"]
+        wifi_connected = w["ssid"] != "N/A"
         wifi_html = f"""
         <div class="card">
           <div class="card-title">Wi-Fi — {h(w['iface'])}</div>
+          <div style="font-size:18px;font-family:var(--mono);font-weight:600;color:var(--head);margin-bottom:10px">
+            {status_dot(wifi_connected)} {'Connected' if wifi_connected else 'Disconnected'}
+          </div>
           <div class="kv-grid">
             <span class="k">SSID</span><span class="v">{h(w['ssid'])}</span>
             <span class="k">IP</span><span class="v"><code>{h(w['ip'])}</code></span>
@@ -452,8 +456,10 @@ def build_html(d):
         eth_html = f"""
         <div class="card">
           <div class="card-title">Ethernet — {h(e['iface'])}</div>
+          <div style="font-size:18px;font-family:var(--mono);font-weight:600;color:var(--head);margin-bottom:10px">
+            {status_dot(state_ok)} {'Connected' if state_ok else 'Disconnected'}
+          </div>
           <div class="kv-grid">
-            <span class="k">State</span><span class="v">{status_dot(state_ok)} {h(e['state'])}</span>
             <span class="k">IP</span><span class="v"><code>{h(e['ip'])}</code></span>
             <span class="k">Speed</span><span class="v">{h(e['speed'])}</span>
           </div>
@@ -474,8 +480,10 @@ def build_html(d):
         tailscale_html = f"""
         <div class="card">
           <div class="card-title">Tailscale</div>
+          <div style="font-size:18px;font-family:var(--mono);font-weight:600;color:var(--head);margin-bottom:10px">
+            {status_dot(state_ok)} {h(state)}
+          </div>          
           <div class="kv-grid">
-            <span class="k">State</span><span class="v">{status_dot(state_ok)} {h(state)}</span>
             <span class="k">Source</span><span class="v">{h(ts.get('source', 'unknown'))}</span>
             <span class="k">Device</span><span class="v">{h(ts.get('hostname', 'N/A'))}</span>
             <span class="k">DNS</span><span class="v"><code>{h(ts.get('dns', 'N/A'))}</code></span>
