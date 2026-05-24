@@ -1,0 +1,19 @@
+{
+  "name": "pi-monitor-devcontainer",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "charliermarsh.ruff"
+      ]
+    }
+  },
+  "runArgs": [
+    "--hostname", "pi-monitor-devcontainer"
+  ],
+  "remoteUser": "vscode"
+}
