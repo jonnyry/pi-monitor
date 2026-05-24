@@ -1,6 +1,6 @@
 FROM mcr.microsoft.com/devcontainers/python:3.11
 
-RUN sudo apt update 
+RUN sudo apt update \
     && sudo apt install -y --no-install-recommends \
         iputils-ping \
         iw \
