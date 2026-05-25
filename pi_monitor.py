@@ -698,14 +698,27 @@ def status_dot(ok):
 
 def build_html(d):
     h = html.escape
-    date_str, time_str = d["datetime"]
-    throttle_ok, throttle_flags = d["throttle"]
-    mem_total, mem_used, mem_avail, mem_pct = d["memory"]
-    swap_total, swap_used, swap_pct = d["swap"]
-    ping_ok, ping_loss, ping_avg = d["ping"]
-    pretty_os, kernel, arch = d["os"]
 
-    # throttle
+    # cpu card
+    la1, la5, la15 = d["load"]
+    volt_html = f'<span class="k">Core voltage</span><span class="v">{h(d["voltage"])}</span>' if d["voltage"] else ""
+    cpu_html = f"""
+    <div class="card">
+        <div class="card-title">CPU Usage</div>
+        <div class="big-stat {pct_color(d['cpu_pct'])}">{d['cpu_pct']}%</div>
+        <div class="sub">Load avg &nbsp; {h(la1)} &nbsp; {h(la5)} &nbsp; {h(la15)} &nbsp; (1 / 5 / 15 min)</div>
+        {bar(d['cpu_pct'], pct_color(d['cpu_pct']))}
+        <div style="margin-top:12px" class="kv-grid">
+        <span class="k">Frequency</span><span class="v">{h(d['cpu_freq'])}</span>
+        {volt_html}
+        </div>
+    </div>"""
+
+    # temperature card
+    temp_val = d["temperature"]
+    temp_str = f"{temp_val} °C" if temp_val is not None else "N/A"
+    tc = temp_color(temp_val)
+    throttle_ok, throttle_flags = d["throttle"]
     if throttle_ok is None:
         throttle_section = '<p class="muted">vcgencmd not available</p>'
     elif throttle_ok:
@@ -714,22 +727,55 @@ def build_html(d):
         items = "".join(f'<li>{f}</li>' for f in throttle_flags)
         throttle_section = (f'{status_dot(False)} <span class="crit-text">Throttling active</span>'
                             f'<ul class="flag-list">{items}</ul>')
+    temp_html = f"""
+    <div class="card">
+        <div class="card-title">Temperature</div>
+        <div class="big-stat {tc}">{temp_str}</div>
+        <div class="sub">SoC core temperature</div>
+        {bar(temp_val if temp_val else 0, tc) if temp_val else ''}
+        <div style="margin-top:14px">
+        <div class="card-title" style="margin-bottom:10px">Throttle Status</div>
+        {throttle_section}
+        </div>
+    </div>"""
 
-    # disks
-    disk_rows = ""
-    for dk in d["disks"]:
-        c = pct_color(dk["pct"])
-        disk_rows += f"""
-        <tr>
-          <td><code>{h(dk['mount'])}</code></td>
-          <td>{h(dk['size'])}</td>
-          <td>{h(dk['used'])}</td>
-          <td>{h(dk['avail'])}</td>
-          <td class="{c}">{dk['pct']}%</td>
-          <td style="min-width:120px">{bar(dk['pct'], c)}</td>
-        </tr>"""
+    # memory card
+    mem_total, mem_used, mem_avail, mem_pct = d["memory"]
+    swap_total, swap_used, swap_pct = d["swap"]
+    gpu_html  = f'<span class="k">GPU RAM</span><span class="v">{h(d["gpu_mem"])}</span>' if d["gpu_mem"] else ""
+    memory_html = f"""
+    <div class="card">
+        <div class="card-title">Memory</div>
+        <div class="big-stat {pct_color(mem_pct)}">{mem_pct}%</div>
+        <div class="sub">{mem_used} used of {mem_total} &nbsp;·&nbsp; {mem_avail} free</div>
+        {bar(mem_pct, pct_color(mem_pct))}
+        <div style="margin-top:12px" class="kv-grid">
+        <span class="k">Swap used</span><span class="v">{swap_used} / {swap_total} ({swap_pct}%)</span>
+        {gpu_html}
+        </div>
+    </div>"""
 
-    # wifi
+    # internet connectivity card
+    ping_ok, ping_loss, ping_avg = d["ping"]
+    ping_str      = f"{ping_avg} ms" if ping_avg else "—"
+    ping_loss_str = f"{ping_loss}% loss" if ping_loss is not None else "—"
+    ping_ok_val   = ping_ok if ping_ok is not None else False
+    wan_ip_str    = h(d["wan_ip"]) if d.get("wan_ip") else "—"
+    connectivity_html = f"""
+    <div class="card">
+        <div class="card-title">Internet Connectivity</div>
+        <div class="card-status">
+        {status_dot(ping_ok_val)} {'Reachable' if ping_ok_val else 'Unreachable'}
+        </div>
+        <div class="kv-grid">
+        <span class="k">Public IP</span><span class="v"><code>{wan_ip_str}</code></span>
+        <span class="k">Ping target</span><span class="v">{PING_HOST}</span>
+        <span class="k">Avg RTT</span><span class="v {('ok' if ping_ok_val else 'crit')}">{ping_str}</span>
+        <span class="k">Packet loss</span><span class="v {('ok' if ping_ok_val else 'crit')}">{ping_loss_str}</span>
+        </div>
+    </div>"""
+
+    # wifi card
     wifi_html = ""
     if d["wifi"]:
         w = d["wifi"]
@@ -748,7 +794,7 @@ def build_html(d):
           </div>
         </div>"""
 
-    # ethernet
+    # ethernet card
     eth_html = ""
     if d["eth"]:
         e = d["eth"]
@@ -765,34 +811,7 @@ def build_html(d):
           </div>
         </div>"""
 
-    # docker
-    docker_html = ""
-    if d.get("docker"):
-        dk = d["docker"]
-        if not dk.get("available"):
-            docker_html = f"""
-        <div class="card">
-          <div class="card-title">Docker</div>
-          <p class="muted">{h(dk.get('error', 'unavailable'))}</p>
-        </div>"""
-        else:
-            dk_total = dk["healthy"] + dk["unhealthy"] + dk["stopped"]
-            dk_pct   = round(100 * dk["healthy"] / dk_total, 1) if dk_total else None
-            dk_cls   = invert_pct_color(dk_pct) if dk_pct is not None else "muted"
-            dk_str   = f"{dk_pct}%" if dk_pct is not None else "N/A"
-            docker_html = f"""
-        <div class="card">
-          <div class="card-title">Docker</div>
-          <div class="big-stat {dk_cls}">{dk_str}</div>
-          <div class="sub">containers running healthy</div>
-          <div style="margin-top:12px" class="kv-grid">
-            <span class="k">Running</span><span class="v ok-text">{dk['healthy']}</span>
-            <span class="k">Unhealthy</span><span class="v {'warn-text' if dk['unhealthy'] > 0 else ''}">{dk['unhealthy']}</span>
-            <span class="k">Stopped</span><span class="v {'crit-text' if dk['stopped'] > 0 else ''}">{dk['stopped']}</span>
-          </div>
-        </div>"""
-
-    # tailscale
+    # tailscale card
     tailscale_html = ""
     if d.get("tailscale"):
         ts = d["tailscale"]
@@ -822,30 +841,86 @@ def build_html(d):
           </div>
         </div>"""
 
-    # processes
-    proc_rows = ""
-    for p in d["processes"]:
-        proc_rows += (f"<tr><td>{h(p['pid'])}</td><td>{h(p['cpu'])}%</td>"
-                      f"<td>{h(p['mem'])}%</td><td><code>{h(p['name'])}</code></td></tr>")
+    # docker card
+    docker_html = ""
+    if d.get("docker"):
+        dk = d["docker"]
+        if not dk.get("available"):
+            docker_html = f"""
+        <div class="card">
+          <div class="card-title">Docker</div>
+          <p class="muted">{h(dk.get('error', 'unavailable'))}</p>
+        </div>"""
+        else:
+            dk_total = dk["healthy"] + dk["unhealthy"] + dk["stopped"]
+            dk_pct   = round(100 * dk["healthy"] / dk_total, 1) if dk_total else None
+            dk_cls   = invert_pct_color(dk_pct) if dk_pct is not None else "muted"
+            dk_str   = f"{dk_pct}%" if dk_pct is not None else "N/A"
+            docker_html = f"""
+        <div class="card">
+          <div class="card-title">Docker</div>
+          <div class="big-stat {dk_cls}">{dk_str}</div>
+          <div class="sub">containers running healthy</div>
+          <div style="margin-top:12px" class="kv-grid">
+            <span class="k">Running</span><span class="v ok-text">{dk['healthy']}</span>
+            <span class="k">Unhealthy</span><span class="v {'warn-text' if dk['unhealthy'] > 0 else ''}">{dk['unhealthy']}</span>
+            <span class="k">Stopped</span><span class="v {'crit-text' if dk['stopped'] > 0 else ''}">{dk['stopped']}</span>
+          </div>
+        </div>"""
 
-    # ports
+    # disks card
+    disk_rows = ""
+    for dk in d["disks"]:
+        c = pct_color(dk["pct"])
+        disk_rows += f"""
+        <tr>
+          <td><code>{h(dk['mount'])}</code></td>
+          <td>{h(dk['size'])}</td>
+          <td>{h(dk['used'])}</td>
+          <td>{h(dk['avail'])}</td>
+          <td class="{c}">{dk['pct']}%</td>
+          <td style="min-width:120px">{bar(dk['pct'], c)}</td>
+        </tr>"""
+    disk_html = f"""
+    <div class="card">
+        <div class="card-title">Disk Usage</div>
+        <table>
+        <thead><tr><th>Mount</th><th>Size</th><th>Used</th><th>Avail</th><th>Use%</th><th></th></tr></thead>
+        <tbody>{disk_rows}</tbody>
+        </table>
+    </div>"""
+
+    # ports card
     port_rows = ""
     for p in d["ports"]:
         port_rows += (f"<tr><td><span class='proto-badge'>{h(p['proto'])}</span></td>"
                       f"<td><strong>{h(p['port'])}</strong></td>"
                       f"<td><code>{h(p['addr'])}</code></td></tr>")
+    ports_html = f"""
+    <div class="card">
+        <div class="card-title">Listening Ports</div>
+        <table>
+        <thead><tr><th>Proto</th><th>Port</th><th>Address</th></tr></thead>
+        <tbody>{port_rows if port_rows else '<tr><td colspan="3" class="muted">None found</td></tr>'}</tbody>
+        </table>
+    </div>"""
 
-    # misc
-    temp_val = d["temperature"]
-    temp_str = f"{temp_val} °C" if temp_val is not None else "N/A"
-    tc = temp_color(temp_val)
-    ping_str      = f"{ping_avg} ms" if ping_avg else "—"
-    ping_loss_str = f"{ping_loss}% loss" if ping_loss is not None else "—"
-    ping_ok_val   = ping_ok if ping_ok is not None else False
-    wan_ip_str    = h(d["wan_ip"]) if d.get("wan_ip") else "—"
-    gpu_html  = f'<span class="k">GPU RAM</span><span class="v">{h(d["gpu_mem"])}</span>' if d["gpu_mem"] else ""
-    volt_html = f'<span class="k">Core voltage</span><span class="v">{h(d["voltage"])}</span>' if d["voltage"] else ""
-    la1, la5, la15 = d["load"]
+    # processes card
+    proc_rows = ""
+    for p in d["processes"]:
+        proc_rows += (f"<tr><td>{h(p['pid'])}</td><td>{h(p['cpu'])}%</td>"
+                      f"<td>{h(p['mem'])}%</td><td><code>{h(p['name'])}</code></td></tr>")
+    procs_html = f"""
+    <div class="card">
+        <div class="card-title">Top Processes by CPU</div>
+        <table>
+        <thead><tr><th>PID</th><th>CPU %</th><th>MEM %</th><th>Command</th></tr></thead>
+        <tbody>{proc_rows}</tbody>
+        </table>
+    </div>"""
+
+    date_str, time_str = d["datetime"]
+    pretty_os, kernel, arch = d["os"]
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -877,90 +952,24 @@ def build_html(d):
   </div>
 </header>
 
-<!-- Row 1: core metrics -->
 <div class="grid">
-
-  <div class="card">
-    <div class="card-title">CPU Usage</div>
-    <div class="big-stat {pct_color(d['cpu_pct'])}">{d['cpu_pct']}%</div>
-    <div class="sub">Load avg &nbsp; {h(la1)} &nbsp; {h(la5)} &nbsp; {h(la15)} &nbsp; (1 / 5 / 15 min)</div>
-    {bar(d['cpu_pct'], pct_color(d['cpu_pct']))}
-    <div style="margin-top:12px" class="kv-grid">
-      <span class="k">Frequency</span><span class="v">{h(d['cpu_freq'])}</span>
-      {volt_html}
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="card-title">Temperature</div>
-    <div class="big-stat {tc}">{temp_str}</div>
-    <div class="sub">SoC core temperature</div>
-    {bar(temp_val if temp_val else 0, tc) if temp_val else ''}
-    <div style="margin-top:14px">
-      <div class="card-title" style="margin-bottom:10px">Throttle Status</div>
-      {throttle_section}
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="card-title">Memory</div>
-    <div class="big-stat {pct_color(mem_pct)}">{mem_pct}%</div>
-    <div class="sub">{mem_used} used of {mem_total} &nbsp;·&nbsp; {mem_avail} free</div>
-    {bar(mem_pct, pct_color(mem_pct))}
-    <div style="margin-top:12px" class="kv-grid">
-      <span class="k">Swap used</span><span class="v">{swap_used} / {swap_total} ({swap_pct}%)</span>
-      {gpu_html}
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="card-title">Internet Connectivity</div>
-    <div class="card-status">
-      {status_dot(ping_ok_val)} {'Reachable' if ping_ok_val else 'Unreachable'}
-    </div>
-    <div class="kv-grid">
-      <span class="k">Public IP</span><span class="v"><code>{wan_ip_str}</code></span>
-      <span class="k">Ping target</span><span class="v">{PING_HOST}</span>
-      <span class="k">Avg RTT</span><span class="v {('ok' if ping_ok_val else 'crit')}">{ping_str}</span>
-      <span class="k">Packet loss</span><span class="v {('ok' if ping_ok_val else 'crit')}">{ping_loss_str}</span>
-    </div>
-  </div>
-
-  {wifi_html}
-  {eth_html}
-  {tailscale_html}  
-  {docker_html}
-
+{cpu_html}
+{temp_html}
+{memory_html}
+{connectivity_html}
+{wifi_html}
+{eth_html}
+{tailscale_html}
+{docker_html}
 </div>
 
-<!-- Row 3: disk -->
 <div class="grid-wide">
-  <div class="card">
-    <div class="card-title">Disk Usage</div>
-    <table>
-      <thead><tr><th>Mount</th><th>Size</th><th>Used</th><th>Avail</th><th>Use%</th><th></th></tr></thead>
-      <tbody>{disk_rows}</tbody>
-    </table>
-  </div>
+{disk_html}
 </div>
 
-<!-- Row 4: ports + processes -->
 <div class="grid" style="margin-top:16px">
-  <div class="card">
-    <div class="card-title">Listening Ports</div>
-    <table>
-      <thead><tr><th>Proto</th><th>Port</th><th>Address</th></tr></thead>
-      <tbody>{port_rows if port_rows else '<tr><td colspan="3" class="muted">None found</td></tr>'}</tbody>
-    </table>
-  </div>
-
-  <div class="card">
-    <div class="card-title">Top Processes by CPU</div>
-    <table>
-      <thead><tr><th>PID</th><th>CPU %</th><th>MEM %</th><th>Command</th></tr></thead>
-      <tbody>{proc_rows}</tbody>
-    </table>
-  </div>
+{ports_html}
+{procs_html}
 </div>
 
 <div class="footer">generated by pi_monitor.py &nbsp;·&nbsp; {date_str} {time_str}</div>
