@@ -30,7 +30,6 @@ python3 /home/pi/pi_monitor.py --output /var/www/html/index.html
 # Enable optional status panels
 python3 /home/pi/pi_monitor.py --tailscale
 python3 pi_monitor.py --docker
-python3 pi_monitor.py --dagu --dagu-url http://localhost:8080 --dagu-token <token>
 
 # See all options
 python3 pi_monitor.py --help
@@ -45,10 +44,7 @@ python3 pi_monitor.py --help
 | `--ping-count` | `4` | Number of ping packets to send |
 | `--tailscale` | off | Enable the Tailscale status panel |
 | `--tailscale-container` | `tailscale` | Docker container name to query when native `tailscale` is not found |
-| `--dagu` | off | Enable the Dagu status panel |
-| `--dagu-url` | `http://localhost:8080` | Base URL of the local Dagu instance |
-| `--dagu-token` | | Bearer token for Dagu API authentication |
-| `--docker` | off | Enable Docker status panel. Note: the user running the script must be in the `docker` group |
+| `--docker` | off | Enable Docker status panel. The user running the script must be in the `docker` group, see below |
 
 ### Cron setup
 
@@ -77,13 +73,18 @@ The generated page auto-refreshes every 5 minutes to match.
 
 - **Tailscale** — VPN state, Tailscale IP/DNS, peer count, active peers, and relay breakdown
 - **Docker** - Container state
-- **Dagu** - Status of runs in last 24hrs
+
+**Requirement for Docker panel:** the user running the script must be in the `docker` group:
+
+```bash
+sudo usermod -aG docker $USER
+```
 
 ## Output
 
 A self-contained HTML file with light/dark mode toggle (preference persisted in `localStorage`). The only external resource is the Google Fonts stylesheet.
 
-The page degrades gracefully: any metric that cannot be collected (e.g. `vcgencmd` not available, Docker not accessible, Dagu unreachable) shows an error message in the relevant card rather than crashing the script.
+The page degrades gracefully: any metric that cannot be collected (e.g. `vcgencmd` not available) shows `N/A` or is hidden rather than crashing the script.
 
 ## Serving the output
 

@@ -30,9 +30,6 @@ PING_COUNT  = 4
 TAILSCALE_ENABLED = False
 TAILSCALE_CONTAINER = "tailscale"
 DOCKER_ENABLED = False
-DAGU_ENABLED   = False
-DAGU_URL       = "http://localhost:8080"  # base URL of the local Dagu instance
-DAGU_TOKEN     = ""                       # Bearer token for Dagu API auth
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -344,8 +341,6 @@ def get_docker():
         else:
             healthy += 1
 
-# ── New collectors ────────────────────────────────────────────────────────────
-
     return {
         "available": True,
         "healthy":   healthy,
@@ -353,67 +348,6 @@ def get_docker():
         "stopped":   stopped,
     }
 
-def get_dagu(url=DAGU_URL, token=DAGU_TOKEN):
-    """DAG-run counts for the last 24 hours from the local Dagu API.
-
-    Uses cursor-based pagination to retrieve all runs in the window.
-    Status groupings:
-      success  — status 4
-      failed   — status 2 (failed), 3 (aborted), 8 (rejected)
-      other    — status 0 (not started), 1 (running), 5 (queued),
-                 6 (partial success), 7 (waiting for approval)
-    """
-    import urllib.request
-    import urllib.parse
-
-    if not token:
-        return {
-            "available": False,
-            "error": "no token provided — pass --dagu-token or set DAGU_TOKEN in the script",
-        }
-
-    FAILED_STATUSES  = {2, 3, 8}
-    SUCCESS_STATUSES = {4}
-
-    now   = int(time.time())
-    since = now - 86400
-
-    success = 0
-    failed  = 0
-    other   = 0
-    cursor  = None
-
-    while True:
-        params = {"fromDate": since, "toDate": now, "limit": 100}
-        if cursor:
-            params["cursor"] = cursor
-        req_url = f"{url.rstrip('/')}/api/v1/dag-runs?{urllib.parse.urlencode(params)}"
-        req = urllib.request.Request(req_url, headers={"Authorization": f"Bearer {token}"})
-        try:
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                data = json.loads(resp.read().decode())
-        except Exception as e:
-            return {"available": False, "error": str(e)}
-
-        for run in data.get("dagRuns", []):
-            status = run.get("status")
-            if status in SUCCESS_STATUSES:
-                success += 1
-            elif status in FAILED_STATUSES:
-                failed += 1
-            else:
-                other += 1
-
-        cursor = data.get("nextCursor")
-        if not cursor:
-            break
-
-    return {
-        "available": True,
-        "success":   success,
-        "failed":    failed,
-        "other":     other,
-    }
 
 # ── New collectors ────────────────────────────────────────────────────────────
 
@@ -591,33 +525,6 @@ def build_html(d):
           </div>
         </div>"""
 
-    # dagu
-    dagu_html = ""
-    if d.get("dagu"):
-        dg = d["dagu"]
-        if not dg.get("available"):
-            dagu_html = f"""
-        <div class="card">
-          <div class="card-title">Dagu (24 h)</div>
-          <p class="muted">{h(dg.get('error', 'unavailable'))}</p>
-        </div>"""
-        else:
-            dg_total = dg["success"] + dg["failed"] + dg["other"]
-            dg_pct   = round(100 * dg["success"] / dg_total, 1) if dg_total else None
-            dg_cls   = invert_pct_color(dg_pct) if dg_pct is not None else "muted"
-            dg_str   = f"{dg_pct}%" if dg_pct is not None else "N/A"
-            dagu_html = f"""
-        <div class="card">
-          <div class="card-title">Dagu (24 h)</div>
-          <div class="big-stat {dg_cls}">{dg_str}</div>
-          <div class="sub">DAG runs succeeded</div>
-          <div style="margin-top:12px" class="kv-grid">
-            <span class="k">Success</span><span class="v ok-text">{dg['success']}</span>
-            <span class="k">Failed</span><span class="v {'crit-text' if dg['failed'] > 0 else ''}">{dg['failed']}</span>
-            <span class="k">Other</span><span class="v {'warn-text' if dg['other'] > 0 else ''}">{dg['other']}</span>
-            </div>
-        </div>"""
-            
     # tailscale
     tailscale_html = ""
     if d.get("tailscale"):
@@ -972,7 +879,6 @@ def build_html(d):
   {eth_html}
   {tailscale_html}  
   {docker_html}
-  {dagu_html}
 
 </div>
 
@@ -1052,9 +958,6 @@ def main():
     parser.add_argument("--tailscale", action="store_true", default=TAILSCALE_ENABLED, help="Include Tailscale status panel")
     parser.add_argument("--tailscale-container", metavar="NAME", default=None, help=f"Docker container name for Tailscale (default: {TAILSCALE_CONTAINER})")
     parser.add_argument("--docker", action="store_true", default=DOCKER_ENABLED, help="Include a Docker container status panel (default: off). Requires the running user to be in the docker group.")
-    parser.add_argument("--dagu", action="store_true", default=DAGU_ENABLED, help="Include a Dagu DAG-run summary panel for the last 24 hours (default: off). Requires --dagu-url and --dagu-token.")
-    parser.add_argument("--dagu-url", metavar="URL", default=DAGU_URL, help=f"Base URL of the local Dagu instance (default: {DAGU_URL})")
-    parser.add_argument("--dagu-token", metavar="TOKEN", default=DAGU_TOKEN, help="Bearer token for Dagu API authentication")
 
     args = parser.parse_args()
 
@@ -1065,10 +968,6 @@ def main():
         PING_COUNT = args.ping_count
     if args.tailscale_container:
         TAILSCALE_CONTAINER = args.tailscale_container
-    if args.dagu_url:
-        DAGU_URL = args.dagu_url
-    if args.dagu_token:
-        DAGU_TOKEN= = args.dagu_token
 
     data = {
         "hostname":     get_hostname(),
@@ -1086,7 +985,6 @@ def main():
         "eth":          get_ethernet(),
         "tailscale":    get_tailscale() if args.tailscale else None,
         "docker":       get_docker() if args.docker else None,
-        "dagu":         get_dagu(url=args.dagu_url, token=args.dagu_token) if args.dagu else None,
         "ping":         get_ping(),
         "wan_ip":       get_wan_ip(),
         "processes":    get_processes(),
