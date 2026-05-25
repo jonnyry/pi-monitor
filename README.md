@@ -6,11 +6,11 @@ A single-file Python script (`pi-monitor.py`) that generates a static HTML healt
 
 ### Light mode:
 
-![](images/pimonitor-light.png)
+![](docs/images/pimonitor-light.png)
 
 ### Dark mode:
 
-![](images/pimonitor-dark.png)
+![](docs/images/pimonitor-dark.png)
 
 ## Requirements
 
