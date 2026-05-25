@@ -77,8 +77,10 @@ def get_uptime():
     hours, rem = divmod(rem, 3600)
     mins = rem // 60
     parts = []
-    if days:  parts.append(f"{days}d")
-    if hours: parts.append(f"{hours}h")
+    if days:  
+        parts.append(f"{days}d")
+    if hours: 
+        parts.append(f"{hours}h")
     parts.append(f"{mins}m")
     return " ".join(parts)
 
@@ -152,7 +154,8 @@ def get_memory():
     used  = total - avail
     pct   = round(100 * used / total, 1) if total else 0
     def fmt(kb):
-        if kb >= 1024*1024: return f"{kb/1024/1024:.1f} GB"
+        if kb >= 1024*1024: 
+            return f"{kb/1024/1024:.1f} GB"
         return f"{kb/1024:.0f} MB"
     return fmt(total), fmt(used), fmt(avail), pct
 
@@ -168,7 +171,8 @@ def get_swap():
     used  = total - free
     pct   = round(100 * used / total, 1) if total else 0
     def fmt(kb):
-        if kb >= 1024*1024: return f"{kb/1024/1024:.1f} GB"
+        if kb >= 1024*1024: 
+            return f"{kb/1024/1024:.1f} GB"
         return f"{kb/1024:.0f} MB"
     return fmt(total), fmt(used), pct
 
@@ -402,23 +406,286 @@ def get_listening_ports():
     return ports
 
 
+# ── HTML helpers ──────────────────────────────────────────────────────────────
+
+def _css():
+    return """\
+  :root {
+    --bg:       #f4f6f9;
+    --panel:    #ffffff;
+    --border:   #dde2ec;
+    --accent:   #2563eb;
+    --accent2:  #7c3aed;
+    --ok:       #16a34a;
+    --warn:     #d97706;
+    --crit:     #dc2626;
+    --muted:    #6b7280;
+    --text:     #374151;
+    --head:     #111827;
+    --mono:     'JetBrains Mono', monospace;
+    --sans:     'IBM Plex Sans', sans-serif;
+    --radius:   10px;
+    --shadow:   0 1px 4px rgba(0,0,0,0.07), 0 4px 12px rgba(0,0,0,0.05);
+  }
+  [data-theme="dark"] {
+    --bg:       #0b0e14;
+    --panel:    #131720;
+    --border:   #1e2535;
+    --accent:   #60a5fa;
+    --accent2:  #a78bfa;
+    --ok:       #4ade80;
+    --warn:     #fbbf24;
+    --crit:     #f87171;
+    --muted:    #6b7280;
+    --text:     #c9d1e0;
+    --head:     #f9fafb;
+    --shadow:   none;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    min-height: 100vh;
+    padding: 24px 20px 60px;
+    transition: background 0.25s, color 0.25s;
+  }
+  .theme-btn {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    color: var(--muted);
+    cursor: pointer;
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 5px 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: border-color 0.2s, color 0.2s;
+    white-space: nowrap;
+    box-shadow: var(--shadow);
+  }
+  .theme-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 28px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .hostname {
+    font-family: var(--mono);
+    font-size: clamp(18px, 3vw, 26px);
+    font-weight: 700;
+    color: var(--head);
+    letter-spacing: -0.5px;
+  }
+  .hostname span { color: var(--accent); }
+  .datetime { text-align: right; line-height: 1.5; }
+  .datetime .date { color: var(--muted); font-size: 12px; }
+  .datetime .time { font-family: var(--mono); font-size: 22px; color: var(--accent); font-weight: 600; }
+  .stale-note { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 16px;
+  }
+  .grid-wide { display: grid; grid-template-columns: 1fr; gap: 16px; margin-top: 16px; }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+    position: relative;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+    transition: background 0.25s, border-color 0.25s;
+  }
+  .card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    opacity: 0.6;
+  }
+  .card-title {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 14px;
+  }
+  .card-status {
+    font-size: 16px;
+    font-family: var(--mono);
+    font-weight: 600;
+    color: var(--head);
+    margin-bottom: 10px;
+  }
+  .big-stat {
+    font-family: var(--mono);
+    font-size: 36px;
+    font-weight: 700;
+    color: var(--head);
+    line-height: 1;
+    margin-bottom: 6px;
+  }
+  .big-stat.ok   { color: var(--ok);   }
+  .big-stat.warn { color: var(--warn); }
+  .big-stat.crit { color: var(--crit); }
+  .stat-num {
+    font-family: var(--mono);
+    font-size: 28px;
+    font-weight: 700;
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+  .stat-num.ok   { color: var(--ok);   }
+  .stat-num.warn { color: var(--warn); }
+  .stat-num.crit { color: var(--crit); }
+  .sub { font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+  .bar-track {
+    background: var(--border);
+    border-radius: 4px;
+    height: 6px;
+    overflow: hidden;
+    margin-top: 4px;
+  }
+  .bar-fill { height: 100%; border-radius: 4px; transition: width 0.4s ease; }
+  .bar-fill.ok   { background: var(--ok);   }
+  .bar-fill.warn { background: var(--warn); }
+  .bar-fill.crit { background: var(--crit); }
+  .kv-grid {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 6px 16px;
+    align-items: center;
+  }
+  .k { color: var(--muted); font-size: 12px; white-space: nowrap; font-weight: 500; }
+  .v { font-family: var(--mono); font-size: 13px; color: var(--text); word-break: break-all; }
+  .dot {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+  .dot-ok   { background: var(--ok);   box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok)   20%, transparent); }
+  .dot-warn { background: var(--warn); box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 20%, transparent); }
+  .dot-crit { background: var(--crit); box-shadow: 0 0 0 3px color-mix(in srgb, var(--crit) 20%, transparent); animation: blink 1.2s ease infinite; }
+  @keyframes blink { 0%,100%{ opacity:1 } 50%{ opacity:0.3 } }
+  .ok-text   { color: var(--ok);   font-weight: 600; }
+  .warn-text { color: var(--warn); font-weight: 600; }
+  .crit-text { color: var(--crit); font-weight: 600; }
+  .muted     { color: var(--muted); font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 13px; }
+  th {
+    text-align: left;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding: 0 10px 8px 0;
+    border-bottom: 1px solid var(--border);
+    font-family: var(--sans);
+    font-weight: 600;
+  }
+  td { padding: 7px 10px 7px 0; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  .ok   { color: var(--ok);   font-weight: 600; }
+  .warn { color: var(--warn); font-weight: 600; }
+  .crit { color: var(--crit); font-weight: 600; }
+  .badge {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 20px;
+    margin-left: 8px;
+    vertical-align: middle;
+  }
+  .badge-crit { background: color-mix(in srgb, var(--crit) 15%, transparent); color: var(--crit); }
+  .proto-badge {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--accent);
+    text-transform: uppercase;
+  }
+  .flag-list { margin: 8px 0 0 16px; font-size: 12px; color: var(--crit); line-height: 1.8; }
+  .footer {
+    margin-top: 36px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 11px;
+    font-family: var(--mono);
+  }
+  code { font-family: var(--mono); }
+  strong { font-weight: 600; }"""
+
+
+def _js():
+    return """\
+  const btn  = document.getElementById('themeBtn');
+  const root = document.documentElement;
+  // localStorage overrides the server-side default if the user has toggled manually
+  const stored = localStorage.getItem('theme');
+  if (stored === 'dark') { root.setAttribute('data-theme', 'dark'); }
+  if (stored === 'light') { root.removeAttribute('data-theme'); }
+  // Sync button label to current state
+  function syncBtn() {
+    btn.textContent = root.getAttribute('data-theme') === 'dark' ? '☀ Light' : '☾ Dark';
+  }
+  syncBtn();
+  function toggleTheme() {
+    const isDark = root.getAttribute('data-theme') === 'dark';
+    if (isDark) {
+      root.removeAttribute('data-theme');
+      localStorage.setItem('theme', 'light');
+    } else {
+      root.setAttribute('data-theme', 'dark');
+      localStorage.setItem('theme', 'dark');
+    }
+    syncBtn();
+  }"""
+
+
 # ── HTML generation ───────────────────────────────────────────────────────────
 
 def pct_color(pct):
-    if pct < 60:   return "ok"
-    if pct < 85:   return "warn"
+    if pct < 60:   
+        return "ok"
+    if pct < 85:   
+        return "warn"
     return "crit"
 
 def invert_pct_color(pct):
     """For success-rate metrics where higher is better."""
-    if pct >= 100: return "ok"
-    if pct >= 90:  return "warn"
+    if pct >= 100: 
+        return "ok"
+    if pct >= 90:  
+        return "warn"
     return "crit"
 
 def temp_color(t):
-    if t is None: return "ok"
-    if t < 65:    return "ok"
-    if t < 80:    return "warn"
+    if t is None: 
+        return "ok"
+    if t < 65:    
+        return "ok"
+    if t < 80:    
+        return "warn"
     return "crit"
 
 def bar(pct, cls="ok"):
@@ -590,230 +857,7 @@ def build_html(d):
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
-  :root {{
-    --bg:       #f4f6f9;
-    --panel:    #ffffff;
-    --border:   #dde2ec;
-    --accent:   #2563eb;
-    --accent2:  #7c3aed;
-    --ok:       #16a34a;
-    --warn:     #d97706;
-    --crit:     #dc2626;
-    --muted:    #6b7280;
-    --text:     #374151;
-    --head:     #111827;
-    --mono:     'JetBrains Mono', monospace;
-    --sans:     'IBM Plex Sans', sans-serif;
-    --radius:   10px;
-    --shadow:   0 1px 4px rgba(0,0,0,0.07), 0 4px 12px rgba(0,0,0,0.05);
-  }}
-  [data-theme="dark"] {{
-    --bg:       #0b0e14;
-    --panel:    #131720;
-    --border:   #1e2535;
-    --accent:   #60a5fa;
-    --accent2:  #a78bfa;
-    --ok:       #4ade80;
-    --warn:     #fbbf24;
-    --crit:     #f87171;
-    --muted:    #6b7280;
-    --text:     #c9d1e0;
-    --head:     #f9fafb;
-    --shadow:   none;
-  }}
-  *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
-  body {{
-    background: var(--bg);
-    color: var(--text);
-    font-family: var(--sans);
-    font-size: 14px;
-    min-height: 100vh;
-    padding: 24px 20px 60px;
-    transition: background 0.25s, color 0.25s;
-  }}
-  .theme-btn {{
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 20px;
-    color: var(--muted);
-    cursor: pointer;
-    font-family: var(--mono);
-    font-size: 11px;
-    padding: 5px 12px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    transition: border-color 0.2s, color 0.2s;
-    white-space: nowrap;
-    box-shadow: var(--shadow);
-  }}
-  .theme-btn:hover {{ border-color: var(--accent); color: var(--accent); }}
-  .header {{
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-end;
-    flex-wrap: wrap;
-    gap: 12px;
-    margin-bottom: 28px;
-    padding-bottom: 20px;
-    border-bottom: 1px solid var(--border);
-  }}
-  .hostname {{
-    font-family: var(--mono);
-    font-size: clamp(18px, 3vw, 26px);
-    font-weight: 700;
-    color: var(--head);
-    letter-spacing: -0.5px;
-  }}
-  .hostname span {{ color: var(--accent); }}
-  .datetime {{ text-align: right; line-height: 1.5; }}
-  .datetime .date {{ color: var(--muted); font-size: 12px; }}
-  .datetime .time {{ font-family: var(--mono); font-size: 22px; color: var(--accent); font-weight: 600; }}
-  .stale-note {{ font-size: 11px; color: var(--muted); margin-top: 2px; }}
-  .grid {{
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: 16px;
-  }}
-  .grid-wide {{ display: grid; grid-template-columns: 1fr; gap: 16px; margin-top: 16px; }}
-  .card {{
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 18px 20px;
-    position: relative;
-    overflow: hidden;
-    box-shadow: var(--shadow);
-    transition: background 0.25s, border-color 0.25s;
-  }}
-  .card::before {{
-    content: '';
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    height: 2px;
-    background: linear-gradient(90deg, var(--accent), var(--accent2));
-    opacity: 0.6;
-  }}
-  .card-title {{
-    font-family: var(--mono);
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--muted);
-    margin-bottom: 14px;
-  }}
-  .card-status {{
-    font-size: 16px;
-    font-family: var(--mono);
-    font-weight: 600;
-    color: var(--head);
-    margin-bottom: 10px;
-  }}
-  .big-stat {{
-    font-family: var(--mono);
-    font-size: 36px;
-    font-weight: 700;
-    color: var(--head);
-    line-height: 1;
-    margin-bottom: 6px;
-  }}
-  .big-stat.ok   {{ color: var(--ok);   }}
-  .big-stat.warn {{ color: var(--warn); }}
-  .big-stat.crit {{ color: var(--crit); }}
-  .stat-num {{
-    font-family: var(--mono);
-    font-size: 28px;
-    font-weight: 700;
-    line-height: 1;
-    margin-bottom: 4px;
-  }}
-  .stat-num.ok   {{ color: var(--ok);   }}
-  .stat-num.warn {{ color: var(--warn); }}
-  .stat-num.crit {{ color: var(--crit); }}
-  .sub {{ font-size: 12px; color: var(--muted); margin-bottom: 10px; }}
-  .bar-track {{
-    background: var(--border);
-    border-radius: 4px;
-    height: 6px;
-    overflow: hidden;
-    margin-top: 4px;
-  }}
-  .bar-fill {{ height: 100%; border-radius: 4px; transition: width 0.4s ease; }}
-  .bar-fill.ok   {{ background: var(--ok);   }}
-  .bar-fill.warn {{ background: var(--warn); }}
-  .bar-fill.crit {{ background: var(--crit); }}
-  .kv-grid {{
-    display: grid;
-    grid-template-columns: auto 1fr;
-    gap: 6px 16px;
-    align-items: center;
-  }}
-  .k {{ color: var(--muted); font-size: 12px; white-space: nowrap; font-weight: 500; }}
-  .v {{ font-family: var(--mono); font-size: 13px; color: var(--text); word-break: break-all; }}
-  .dot {{
-    display: inline-block;
-    width: 8px; height: 8px;
-    border-radius: 50%;
-    margin-right: 6px;
-    vertical-align: middle;
-  }}
-  .dot-ok   {{ background: var(--ok);   box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok)   20%, transparent); }}
-  .dot-warn {{ background: var(--warn); box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 20%, transparent); }}
-  .dot-crit {{ background: var(--crit); box-shadow: 0 0 0 3px color-mix(in srgb, var(--crit) 20%, transparent); animation: blink 1.2s ease infinite; }}
-  @keyframes blink {{ 0%,100%{{ opacity:1 }} 50%{{ opacity:0.3 }} }}
-  .ok-text   {{ color: var(--ok);   font-weight: 600; }}
-  .warn-text {{ color: var(--warn); font-weight: 600; }}
-  .crit-text {{ color: var(--crit); font-weight: 600; }}
-  .muted     {{ color: var(--muted); font-size: 12px; }}
-  table {{ width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 13px; }}
-  th {{
-    text-align: left;
-    font-size: 10px;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--muted);
-    padding: 0 10px 8px 0;
-    border-bottom: 1px solid var(--border);
-    font-family: var(--sans);
-    font-weight: 600;
-  }}
-  td {{ padding: 7px 10px 7px 0; border-bottom: 1px solid var(--border); vertical-align: middle; }}
-  tr:last-child td {{ border-bottom: none; }}
-  .ok   {{ color: var(--ok);   font-weight: 600; }}
-  .warn {{ color: var(--warn); font-weight: 600; }}
-  .crit {{ color: var(--crit); font-weight: 600; }}
-  .badge {{
-    display: inline-block;
-    font-family: var(--mono);
-    font-size: 10px;
-    font-weight: 600;
-    padding: 2px 7px;
-    border-radius: 20px;
-    margin-left: 8px;
-    vertical-align: middle;
-  }}
-  .badge-crit {{ background: color-mix(in srgb, var(--crit) 15%, transparent); color: var(--crit); }}
-  .proto-badge {{
-    font-family: var(--mono);
-    font-size: 10px;
-    font-weight: 700;
-    padding: 1px 6px;
-    border-radius: 4px;
-    background: color-mix(in srgb, var(--accent) 12%, transparent);
-    color: var(--accent);
-    text-transform: uppercase;
-  }}
-  .flag-list {{ margin: 8px 0 0 16px; font-size: 12px; color: var(--crit); line-height: 1.8; }}
-  .footer {{
-    margin-top: 36px;
-    text-align: center;
-    color: var(--muted);
-    font-size: 11px;
-    font-family: var(--mono);
-  }}
-  code {{ font-family: var(--mono); }}
-  strong {{ font-weight: 600; }}
+{_css()}
 </style>
 </head>
 <body>
@@ -922,28 +966,7 @@ def build_html(d):
 <div class="footer">generated by pi_monitor.py &nbsp;·&nbsp; {date_str} {time_str}</div>
 
 <script>
-  const btn  = document.getElementById('themeBtn');
-  const root = document.documentElement;
-  // localStorage overrides the server-side default if the user has toggled manually
-  const stored = localStorage.getItem('theme');
-  if (stored === 'dark') {{ root.setAttribute('data-theme', 'dark'); }}
-  if (stored === 'light') {{ root.removeAttribute('data-theme'); }}
-  // Sync button label to current state
-  function syncBtn() {{
-    btn.textContent = root.getAttribute('data-theme') === 'dark' ? '☀ Light' : '☾ Dark';
-  }}
-  syncBtn();
-  function toggleTheme() {{
-    const isDark = root.getAttribute('data-theme') === 'dark';
-    if (isDark) {{
-      root.removeAttribute('data-theme');
-      localStorage.setItem('theme', 'light');
-    }} else {{
-      root.setAttribute('data-theme', 'dark');
-      localStorage.setItem('theme', 'dark');
-    }}
-    syncBtn();
-  }}
+{_js()}
 </script>
 
 </body>
