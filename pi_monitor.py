@@ -402,6 +402,8 @@ def get_listening_ports():
 
     ports.sort(key=lambda p: int(p["port"]))
     return ports
+
+
 # ── HTML generation ───────────────────────────────────────────────────────────
 
 def pct_color(pct):
