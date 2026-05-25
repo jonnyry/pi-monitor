@@ -115,6 +115,16 @@ Open the repo in VS Code and choose **Reopen in Container**. The container provi
 ### Makefile
 
 ```bash
-make serve   # generates the HTML and serves it at http://localhost:8080
-make clean   # removes the output directory
+make help             # list all available targets
+make serve            # generate the dashboard and serve it at http://localhost:8080
+make clean            # remove the output directory
+make test             # run all tests (unit + integration)
+make test-unit        # run unit tests only
+make test-integration # run integration tests only
 ```
+
+### Tests
+
+Unit tests mock all I/O (subprocess calls, `/proc` reads) and run in under a second. Integration tests run `pi_monitor.py` as a real subprocess and check the generated HTML — they take around 30 seconds due to the live ping and CPU measurement.
+
+The devcontainer includes stub `iw` and `vcgencmd` commands so both test suites work without Pi hardware.

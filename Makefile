@@ -1,7 +1,17 @@
 OUTPUT_DIR = output
 PORT = 8080
 
-.PHONY: serve clean test test-unit test-integration
+.PHONY: serve clean test test-unit test-integration help
+
+help:
+	@echo "Usage: make <target>"
+	@echo ""
+	@echo "  serve            Generate the dashboard and serve it on http://localhost:$(PORT)"
+	@echo "  clean            Remove the $(OUTPUT_DIR)/ output directory"
+	@echo "  test             Run all tests (unit + integration)"
+	@echo "  test-unit        Run unit tests only"
+	@echo "  test-integration Run integration tests only"
+	@echo "  help             Show this help message"
 
 serve:
 	mkdir -p $(OUTPUT_DIR)
