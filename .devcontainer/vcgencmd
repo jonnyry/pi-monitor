@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# This is a mock implementation of the `vcgencmd` command, which is used to query various system information on Raspberry Pi devices.
+# Mock implementation of the `vcgencmd` command, which is used to query various system information on Raspberry Pi devices.
 # This script is intended for use in a development container environment where the actual hardware-specific command may not be available.
 
 case "$1" in

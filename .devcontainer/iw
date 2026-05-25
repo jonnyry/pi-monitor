@@ -1,0 +1,33 @@
+#!/bin/bash
+
+# Mock implementation of the `iw` command for use in the devcontainer
+# where real wireless hardware is not available.
+
+case "$1" in
+    dev)
+        echo "phy#0"
+        echo "	Interface wlan0"
+        echo "		ifindex 3"
+        echo "		wdev 0x1"
+        echo "		addr b8:27:eb:12:34:56"
+        echo "		type managed"
+        echo "		txpower 31.00 dBm"
+        ;;
+
+    wlan0)
+        case "$2" in
+            link)
+                echo "Not connected."
+                ;;
+            *)
+                echo "unknown iw wlan0 subcommand: $2"
+                exit 1
+                ;;
+        esac
+        ;;
+
+    *)
+        echo "unknown command: iw $*"
+        exit 1
+        ;;
+esac
