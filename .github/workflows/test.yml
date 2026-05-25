@@ -1,0 +1,35 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install pytest
+        run: pip install pytest
+
+      - name: Add devcontainer mock tools to PATH
+        run: |
+          mkdir -p /tmp/mock-bin
+          cp .devcontainer/iw .devcontainer/vcgencmd /tmp/mock-bin/
+          chmod +x /tmp/mock-bin/iw /tmp/mock-bin/vcgencmd
+          echo "/tmp/mock-bin" >> $GITHUB_PATH
+
+      - name: Run unit tests
+        run: pytest tests/test_unit.py -v
+
+      - name: Run integration tests
+        run: pytest tests/test_integration.py -v
