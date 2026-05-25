@@ -197,7 +197,7 @@ def get_wifi():
             "ip": ip or "N/A", "bitrate": bitrate or "N/A"}
 
 def get_ethernet():
-    iface = run("ip link show | awk -F: '/^[0-9]+: e/{print $2}' | tr -d ' ' | head -1")
+    iface = run("ip link show | awk -F: '/^[0-9]+: e/{print $2}' | tr -d ' ' | cut -d@ -f1 | head -1")
     if iface == "N/A" or not iface:
         return None
     iface = _safe_iface(iface)
