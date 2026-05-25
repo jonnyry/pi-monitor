@@ -1,7 +1,7 @@
 OUTPUT_DIR = output
 PORT = 8080
 
-.PHONY: serve clean
+.PHONY: serve clean test test-unit test-integration
 
 serve:
 	mkdir -p $(OUTPUT_DIR)
@@ -11,3 +11,12 @@ serve:
 
 clean:
 	rm -rf $(OUTPUT_DIR)
+
+test:
+	python3 -m pytest tests/ -v
+
+test-unit:
+	python3 -m pytest tests/test_unit.py -v
+
+test-integration:
+	python3 -m pytest tests/test_integration.py -v
