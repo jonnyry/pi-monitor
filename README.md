@@ -24,11 +24,12 @@ A single-file Python script (`pi-monitor.py`) that generates a static HTML healt
 # Write to the default location (same directory as the script)
 python3 pi_monitor.py
 
-# Output to a different location
+# Write to a different location
 python3 /home/pi/pi_monitor.py --output /var/www/html/index.html
 
-# Enable the tailscale panel
+# Enable optional status panels
 python3 /home/pi/pi_monitor.py --tailscale
+python3 pi_monitor.py --docker
 
 # See all options
 python3 pi_monitor.py --help
@@ -43,6 +44,7 @@ python3 pi_monitor.py --help
 | `--ping-count` | `4` | Number of ping packets to send |
 | `--tailscale` | off | Enable the Tailscale status panel |
 | `--tailscale-container` | `tailscale` | Docker container name to query when native `tailscale` is not found |
+| `--docker` | off | Enable Docker status panel. The user running the script must be in the `docker` group, see below |
 
 ### Cron setup
 
@@ -70,6 +72,13 @@ The generated page auto-refreshes every 5 minutes to match.
 ### Optional
 
 - **Tailscale** — VPN state, Tailscale IP/DNS, peer count, active peers, and relay breakdown
+- **Docker** - Container state
+
+**Requirement for Docker panel:** the user running the script must be in the `docker` group:
+
+```bash
+sudo usermod -aG docker $USER
+```
 
 ## Output
 

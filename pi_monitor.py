@@ -29,6 +29,7 @@ PING_HOST   = "8.8.8.8"
 PING_COUNT  = 4
 TAILSCALE_ENABLED = False
 TAILSCALE_CONTAINER = "tailscale"
+DOCKER_ENABLED = False
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -318,8 +319,34 @@ def get_voltage():
         return raw.split("=")[1]
     return None
 
+def get_docker():
+    """Container counts by state. Requires the running user to be in the docker group."""
+    raw = run_cmd(["docker", "ps", "-a", "--format", "{{.Status}}"])
+    if raw is None:
+        return {
+            "available": False,
+            "error": "docker not available (is the user in the docker group?)",
+        }
 
-# ── New collectors ────────────────────────────────────────────────────────────
+    healthy   = 0
+    unhealthy = 0
+    stopped   = 0
+
+    for line in raw.splitlines():
+        line_lower = line.lower()
+        if not line_lower.startswith("up"):
+            stopped += 1
+        elif "unhealthy" in line_lower:
+            unhealthy += 1
+        else:
+            healthy += 1
+
+    return {
+        "available": True,
+        "healthy":   healthy,
+        "unhealthy": unhealthy,
+        "stopped":   stopped,
+    }
 
 
 def get_listening_ports():
@@ -380,6 +407,12 @@ def get_listening_ports():
 def pct_color(pct):
     if pct < 60:   return "ok"
     if pct < 85:   return "warn"
+    return "crit"
+
+def invert_pct_color(pct):
+    """For success-rate metrics where higher is better."""
+    if pct >= 100: return "ok"
+    if pct >= 90:  return "warn"
     return "crit"
 
 def temp_color(t):
@@ -462,6 +495,33 @@ def build_html(d):
           <div class="kv-grid">
             <span class="k">IP</span><span class="v"><code>{h(e['ip'])}</code></span>
             <span class="k">Speed</span><span class="v">{h(e['speed'])}</span>
+          </div>
+        </div>"""
+
+    # docker
+    docker_html = ""
+    if d.get("docker"):
+        dk = d["docker"]
+        if not dk.get("available"):
+            docker_html = f"""
+        <div class="card">
+          <div class="card-title">Docker</div>
+          <p class="muted">{h(dk.get('error', 'unavailable'))}</p>
+        </div>"""
+        else:
+            dk_total = dk["healthy"] + dk["unhealthy"] + dk["stopped"]
+            dk_pct   = round(100 * dk["healthy"] / dk_total, 1) if dk_total else None
+            dk_cls   = invert_pct_color(dk_pct) if dk_pct is not None else "muted"
+            dk_str   = f"{dk_pct}%" if dk_pct is not None else "N/A"
+            docker_html = f"""
+        <div class="card">
+          <div class="card-title">Docker</div>
+          <div class="big-stat {dk_cls}">{dk_str}</div>
+          <div class="sub">containers running healthy</div>
+          <div style="margin-top:12px" class="kv-grid">
+            <span class="k">Running</span><span class="v ok-text">{dk['healthy']}</span>
+            <span class="k">Unhealthy</span><span class="v {'warn-text' if dk['unhealthy'] > 0 else ''}">{dk['unhealthy']}</span>
+            <span class="k">Stopped</span><span class="v {'crit-text' if dk['stopped'] > 0 else ''}">{dk['stopped']}</span>
           </div>
         </div>"""
 
@@ -817,7 +877,8 @@ def build_html(d):
 
   {wifi_html}
   {eth_html}
-  {tailscale_html}
+  {tailscale_html}  
+  {docker_html}
 
 </div>
 
@@ -896,6 +957,8 @@ def main():
     parser.add_argument("--ping-count", metavar="N", type=int, default=None, help=f"Number of ping packets (default: {PING_COUNT})")
     parser.add_argument("--tailscale", action="store_true", default=TAILSCALE_ENABLED, help="Include Tailscale status panel")
     parser.add_argument("--tailscale-container", metavar="NAME", default=None, help=f"Docker container name for Tailscale (default: {TAILSCALE_CONTAINER})")
+    parser.add_argument("--docker", action="store_true", default=DOCKER_ENABLED, help="Include a Docker container status panel (default: off). Requires the running user to be in the docker group.")
+
     args = parser.parse_args()
 
     output_path = Path(args.output) if args.output else OUTPUT_PATH
@@ -921,6 +984,7 @@ def main():
         "wifi":         get_wifi(),
         "eth":          get_ethernet(),
         "tailscale":    get_tailscale() if args.tailscale else None,
+        "docker":       get_docker() if args.docker else None,
         "ping":         get_ping(),
         "wan_ip":       get_wan_ip(),
         "processes":    get_processes(),
