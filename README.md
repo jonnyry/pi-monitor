@@ -121,6 +121,7 @@ make clean            # remove the output directory
 make test             # run all tests (unit + integration)
 make test-unit        # run unit tests only
 make test-integration # run integration tests only
+make lint             # run ruff linter
 ```
 
 ### Tests

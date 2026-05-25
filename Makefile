@@ -1,7 +1,7 @@
 OUTPUT_DIR = output
 PORT = 8080
 
-.PHONY: serve clean test test-unit test-integration help
+.PHONY: serve clean test test-unit test-integration lint help
 
 help:
 	@echo "Usage: make <target>"
@@ -11,6 +11,7 @@ help:
 	@echo "  test             Run all tests (unit + integration)"
 	@echo "  test-unit        Run unit tests only"
 	@echo "  test-integration Run integration tests only"
+	@echo "  lint             Run ruff linter"
 	@echo "  help             Show this help message"
 
 serve:
@@ -30,3 +31,6 @@ test-unit:
 
 test-integration:
 	python3 -m pytest tests/test_integration.py -v
+
+lint:
+	ruff check pi_monitor.py tests/
