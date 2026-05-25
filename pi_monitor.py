@@ -349,8 +349,6 @@ def get_docker():
     }
 
 
-# ── New collectors ────────────────────────────────────────────────────────────
-
 def get_listening_ports():
     """Listening TCP/UDP ports from /proc/net — no root required."""
     import socket as _socket
