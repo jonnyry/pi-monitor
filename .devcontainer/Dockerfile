@@ -11,6 +11,8 @@ RUN chmod +x \
     /usr/local/bin/vcgencmd \
     /usr/local/bin/iw
 
-RUN pip install --no-cache-dir pytest
+RUN pip install --no-cache-dir \
+    pytest \
+    ruff
 
 WORKDIR /workspace
