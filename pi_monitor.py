@@ -470,7 +470,7 @@ def build_html(d):
         wifi_html = f"""
         <div class="card">
           <div class="card-title">Wi-Fi — {h(w['iface'])}</div>
-          <div style="font-size:18px;font-family:var(--mono);font-weight:600;color:var(--head);margin-bottom:10px">
+          <div class="card-status">
             {status_dot(wifi_connected)} {'Connected' if wifi_connected else 'Disconnected'}
           </div>
           <div class="kv-grid">
@@ -489,7 +489,7 @@ def build_html(d):
         eth_html = f"""
         <div class="card">
           <div class="card-title">Ethernet — {h(e['iface'])}</div>
-          <div style="font-size:18px;font-family:var(--mono);font-weight:600;color:var(--head);margin-bottom:10px">
+          <div class="card-status">
             {status_dot(state_ok)} {'Connected' if state_ok else 'Disconnected'}
           </div>
           <div class="kv-grid">
@@ -540,7 +540,7 @@ def build_html(d):
         tailscale_html = f"""
         <div class="card">
           <div class="card-title">Tailscale</div>
-          <div style="font-size:18px;font-family:var(--mono);font-weight:600;color:var(--head);margin-bottom:10px">
+          <div class="card-status">
             {status_dot(state_ok)} {h(state)}
           </div>          
           <div class="kv-grid">
@@ -703,6 +703,13 @@ def build_html(d):
     color: var(--muted);
     margin-bottom: 14px;
   }}
+  .card-status {{
+    font-size: 16px;
+    font-family: var(--mono);
+    font-weight: 600;
+    color: var(--head);
+    margin-bottom: 10px;
+  }}
   .big-stat {{
     font-family: var(--mono);
     font-size: 36px;
@@ -864,7 +871,7 @@ def build_html(d):
 
   <div class="card">
     <div class="card-title">Internet Connectivity</div>
-    <div style="font-size:18px;font-family:var(--mono);font-weight:600;color:var(--head);margin-bottom:10px">
+    <div class="card-status">
       {status_dot(ping_ok_val)} {'Reachable' if ping_ok_val else 'Unreachable'}
     </div>
     <div class="kv-grid">
