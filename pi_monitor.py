@@ -61,7 +61,7 @@ def _safe_iface(iface):
         return iface
     return None
 
-# ── Data collection ───────────────────────────────────────────────────────────
+# ── Page-level data collection ────────────────────────────────────────────────
 
 def get_hostname():
     return socket.getfqdn()
@@ -77,239 +77,12 @@ def get_uptime():
     hours, rem = divmod(rem, 3600)
     mins = rem // 60
     parts = []
-    if days:  
+    if days:
         parts.append(f"{days}d")
-    if hours: 
+    if hours:
         parts.append(f"{hours}h")
     parts.append(f"{mins}m")
     return " ".join(parts)
-
-def get_cpu_percent():
-    def read_stat():
-        line = Path("/proc/stat").read_text().splitlines()[0].split()
-        total = sum(int(x) for x in line[1:])
-        idle  = int(line[4])
-        return total, idle
-    t1, i1 = read_stat()
-    time.sleep(0.5)
-    t2, i2 = read_stat()
-    diff_total = t2 - t1
-    diff_idle  = i2 - i1
-    if diff_total == 0:
-        return 0.0
-    return round(100.0 * (1 - diff_idle / diff_total), 1)
-
-def get_load_avg():
-    raw = read("/proc/loadavg", "? ? ?")
-    parts = raw.split()
-    return parts[0], parts[1], parts[2]
-
-def get_cpu_freq():
-    raw = read("/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq", None)
-    if raw and raw != "N/A":
-        return f"{int(raw) // 1000} MHz"
-    raw2 = run("vcgencmd measure_clock arm 2>/dev/null | cut -d= -f2")
-    if raw2 and raw2 != "N/A":
-        return f"{int(raw2) // 1_000_000} MHz"
-    return "N/A"
-
-def get_temperature():
-    raw = read("/sys/class/thermal/thermal_zone0/temp", None)
-    if raw and raw != "N/A":
-        return round(int(raw) / 1000, 1)
-    raw2 = run("vcgencmd measure_temp 2>/dev/null")
-    if raw2 != "N/A":
-        m = re.search(r"[\d.]+", raw2)
-        if m:
-            return float(m.group())
-    return None
-
-def get_throttle():
-    raw = run("vcgencmd get_throttled 2>/dev/null")
-    if raw == "N/A" or "=" not in raw:
-        return None, []
-    val = int(raw.split("=")[1], 16)
-    flags = {
-        0:  "Under-voltage detected",
-        1:  "ARM frequency capped",
-        2:  "Currently throttled",
-        3:  "Soft temperature limit active",
-        16: "Under-voltage has occurred",
-        17: "ARM frequency capped (historical)",
-        18: "Throttling has occurred",
-        19: "Soft temperature limit (historical)",
-    }
-    active = [desc for bit, desc in flags.items() if val & (1 << bit)]
-    return val == 0, active
-
-def get_memory():
-    raw = read("/proc/meminfo", "")
-    info = {}
-    for line in raw.splitlines():
-        parts = line.split()
-        if len(parts) >= 2:
-            info[parts[0].rstrip(":")] = int(parts[1])
-    total = info.get("MemTotal", 0)
-    avail = info.get("MemAvailable", 0)
-    used  = total - avail
-    pct   = round(100 * used / total, 1) if total else 0
-    def fmt(kb):
-        if kb >= 1024*1024: 
-            return f"{kb/1024/1024:.1f} GB"
-        return f"{kb/1024:.0f} MB"
-    return fmt(total), fmt(used), fmt(avail), pct
-
-def get_swap():
-    raw = read("/proc/meminfo", "")
-    info = {}
-    for line in raw.splitlines():
-        parts = line.split()
-        if len(parts) >= 2:
-            info[parts[0].rstrip(":")] = int(parts[1])
-    total = info.get("SwapTotal", 0)
-    free  = info.get("SwapFree", 0)
-    used  = total - free
-    pct   = round(100 * used / total, 1) if total else 0
-    def fmt(kb):
-        if kb >= 1024*1024: 
-            return f"{kb/1024/1024:.1f} GB"
-        return f"{kb/1024:.0f} MB"
-    return fmt(total), fmt(used), pct
-
-def get_disks():
-    disks = []
-    raw = run("df -h --output=target,size,used,avail,pcent -x tmpfs -x devtmpfs -x squashfs")
-    for line in raw.splitlines()[1:]:
-        parts = line.split()
-        if len(parts) == 5:
-            mount, size, used, avail, pct_str = parts
-            pct = int(pct_str.rstrip("%"))
-            disks.append({"mount": mount, "size": size, "used": used, "avail": avail, "pct": pct})
-    return disks
-
-def get_wifi():
-    iface = run("iw dev 2>/dev/null | awk '/Interface/{print $2}' | head -1")
-    if iface == "N/A" or not iface:
-        return None
-    iface = _safe_iface(iface)
-    if not iface:
-        return None
-    ssid    = run(f"iw {iface} link 2>/dev/null | awk '/SSID/{{print $2}}'")
-    signal  = run(f"iw {iface} link 2>/dev/null | awk '/signal/{{print $2}}'")
-    ip      = run(f"ip -4 addr show {iface} 2>/dev/null | awk '/inet /{{print $2}}' | cut -d/ -f1")
-    bitrate = run(f"iw {iface} link 2>/dev/null | awk '/tx bitrate/{{print $3, $4}}'")
-    return {"iface": iface, "ssid": ssid or "N/A", "signal": signal or "N/A",
-            "ip": ip or "N/A", "bitrate": bitrate or "N/A"}
-
-def get_ethernet():
-    iface = run("ip link show | awk -F: '/^[0-9]+: e/{print $2}' | tr -d ' ' | cut -d@ -f1 | head -1")
-    if iface == "N/A" or not iface:
-        return None
-    iface = _safe_iface(iface)
-    if not iface:
-        return None
-    state = run(f"cat /sys/class/net/{iface}/operstate 2>/dev/null")
-    ip    = run(f"ip -4 addr show {iface} 2>/dev/null | awk '/inet /{{print $2}}' | cut -d/ -f1")
-    speed = run(f"cat /sys/class/net/{iface}/speed 2>/dev/null")
-    speed_str = f"{speed} Mbps" if speed not in ("N/A", "-1", "") else "N/A"
-    return {"iface": iface, "state": state, "ip": ip or "N/A", "speed": speed_str}
-
-def get_tailscale():
-    sources = [
-        ("native", ["tailscale", "status", "--json"]),
-        ("docker", ["docker", "exec", TAILSCALE_CONTAINER, "tailscale", "status", "--json"]),
-    ]
-
-    raw = None
-    source = "none"
-    for label, cmd in sources:
-        raw = run_cmd(cmd)
-        if raw:
-            source = label
-            break
-
-    if not raw:
-        return {
-            "available": False,
-            "source": source,
-            "state": "unavailable",
-            "error": "tailscale not found natively or via Docker",
-        }
-
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        return {
-            "available": False,
-            "source": source,
-            "state": "invalid",
-            "error": "tailscale returned invalid JSON",
-        }
-
-    self_info = data.get("Self") or {}
-    peers = list((data.get("Peer") or {}).values())
-    online_peers = [p for p in peers if p.get("Online")]
-    active_peers = [p for p in peers if p.get("Active")]
-
-    relays = {}
-    for p in peers:
-        relay = p.get("Relay")
-        if relay:
-            relays[relay] = relays.get(relay, 0) + 1
-
-    return {
-        "available": True,
-        "source": source,
-        "state": data.get("BackendState", "unknown"),
-        "hostname": self_info.get("HostName", "N/A"),
-        "dns": self_info.get("DNSName", "N/A").rstrip("."),
-        "ips": self_info.get("TailscaleIPs", []),
-        "online_peers": len(online_peers),
-        "total_peers": len(peers),
-        "active_peers": len(active_peers),
-        "relays": relays,
-    }
-
-def get_ping():
-    raw = run(f"ping -c {PING_COUNT} -W 2 {PING_HOST} 2>/dev/null")
-    if raw == "N/A":
-        return None, None, None
-    loss_m = re.search(r"(\d+)% packet loss", raw)
-    rtt_m  = re.search(r"rtt min/avg/max/mdev = [\d.]+/([\d.]+)/[\d.]+/[\d.]+ ms", raw)
-    loss   = int(loss_m.group(1)) if loss_m else 100
-    avg    = float(rtt_m.group(1)) if rtt_m else None
-    return loss == 0, loss, avg
-
-def get_wan_ip():
-    for url in ("https://api.ipify.org", "https://icanhazip.com", "https://ifconfig.me"):
-        result = run(f"curl -s --max-time 5 {url}")
-        if result and result != "N/A" and re.match(r"^\d+\.\d+\.\d+\.\d+$", result.strip()):
-            return result.strip()
-    return None
-
-def get_processes():
-    raw = run("top -bn2 -d0.5 | grep -A 20 'PID' | tail -20")
-    procs = []
-    for line in raw.splitlines():
-        parts = line.split()
-        if len(parts) >= 12 and parts[0].isdigit():
-            procs.append({
-                "pid":  parts[0],
-                "cpu":  parts[8],
-                "mem":  parts[9],
-                "name": parts[11],
-            })
-    try:
-        procs.sort(key=lambda p: float(p["cpu"]), reverse=True)
-    except ValueError:
-        pass
-    return procs[:5]
-
-def get_gpu_memory():
-    raw = run("vcgencmd get_mem gpu 2>/dev/null")
-    if "=" in raw:
-        return raw.split("=")[1]
-    return None
 
 def get_os_info():
     pretty = run("grep PRETTY_NAME /etc/os-release | cut -d= -f2 | tr -d '\"'")
@@ -317,96 +90,638 @@ def get_os_info():
     arch   = run("uname -m")
     return pretty, kernel, arch
 
-def get_voltage():
-    raw = run("vcgencmd measure_volts core 2>/dev/null")
-    if "=" in raw:
-        return raw.split("=")[1]
-    return None
+# ── HTML helpers ──────────────────────────────────────────────────────────────
 
-def get_docker():
-    """Container counts by state. Requires the running user to be in the docker group."""
-    raw = run_cmd(["docker", "ps", "-a", "--format", "{{.Status}}"])
-    if raw is None:
-        return {
-            "available": False,
-            "error": "docker not available (is the user in the docker group?)",
+def pct_color(pct):
+    if pct < 60:
+        return "ok"
+    if pct < 85:
+        return "warn"
+    return "crit"
+
+def invert_pct_color(pct):
+    """For success-rate metrics where higher is better."""
+    if pct >= 100:
+        return "ok"
+    if pct >= 90:
+        return "warn"
+    return "crit"
+
+def temp_color(t):
+    if t is None:
+        return "ok"
+    if t < 65:
+        return "ok"
+    if t < 80:
+        return "warn"
+    return "crit"
+
+def bar(pct, cls="ok"):
+    pct = min(max(pct, 0), 100)
+    return f'<div class="bar-track"><div class="bar-fill {cls}" style="width:{pct}%"></div></div>'
+
+def status_dot(ok):
+    cls = "dot-ok" if ok else "dot-crit"
+    return f'<span class="dot {cls}"></span>'
+
+
+# ── Card base class ───────────────────────────────────────────────────────────
+
+class Card:
+    def collect(self):
+        pass
+
+    def render(self) -> str:
+        return ""
+
+
+# ── Cards ─────────────────────────────────────────────────────────────────────
+
+class CpuCard(Card):
+    def collect(self):
+        self.cpu_pct  = self._get_cpu_percent()
+        self.load     = self._get_load_avg()
+        self.cpu_freq = self._get_cpu_freq()
+        self.voltage  = self._get_voltage()
+
+    def _get_cpu_percent(self):
+        def read_stat():
+            line  = Path("/proc/stat").read_text().splitlines()[0].split()
+            total = sum(int(x) for x in line[1:])
+            idle  = int(line[4])
+            return total, idle
+        t1, i1 = read_stat()
+        time.sleep(0.5)
+        t2, i2 = read_stat()
+        diff_total = t2 - t1
+        diff_idle  = i2 - i1
+        if diff_total == 0:
+            return 0.0
+        return round(100.0 * (1 - diff_idle / diff_total), 1)
+
+    def _get_load_avg(self):
+        raw   = read("/proc/loadavg", "? ? ?")
+        parts = raw.split()
+        return parts[0], parts[1], parts[2]
+
+    def _get_cpu_freq(self):
+        raw = read("/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq", None)
+        if raw and raw != "N/A":
+            return f"{int(raw) // 1000} MHz"
+        raw2 = run("vcgencmd measure_clock arm 2>/dev/null | cut -d= -f2")
+        if raw2 and raw2 != "N/A":
+            return f"{int(raw2) // 1_000_000} MHz"
+        return "N/A"
+
+    def _get_voltage(self):
+        raw = run("vcgencmd measure_volts core 2>/dev/null")
+        if "=" in raw:
+            return raw.split("=")[1]
+        return None
+
+    def render(self):
+        h = html.escape
+        la1, la5, la15 = self.load
+        volt_html = f'<span class="k">Core voltage</span><span class="v">{h(self.voltage)}</span>' if self.voltage else ""
+        return f"""
+    <div class="card">
+        <div class="card-title">CPU Usage</div>
+        <div class="big-stat {pct_color(self.cpu_pct)}">{self.cpu_pct}%</div>
+        <div class="sub">Load avg &nbsp; {h(la1)} &nbsp; {h(la5)} &nbsp; {h(la15)} &nbsp; (1 / 5 / 15 min)</div>
+        {bar(self.cpu_pct, pct_color(self.cpu_pct))}
+        <div style="margin-top:12px" class="kv-grid">
+        <span class="k">Frequency</span><span class="v">{h(self.cpu_freq)}</span>
+        {volt_html}
+        </div>
+    </div>"""
+
+
+class TemperatureCard(Card):
+    def collect(self):
+        self.temperature  = self._get_temperature()
+        self.throttle_ok, self.throttle_flags = self._get_throttle()
+
+    def _get_temperature(self):
+        raw = read("/sys/class/thermal/thermal_zone0/temp", None)
+        if raw and raw != "N/A":
+            return round(int(raw) / 1000, 1)
+        raw2 = run("vcgencmd measure_temp 2>/dev/null")
+        if raw2 != "N/A":
+            m = re.search(r"[\d.]+", raw2)
+            if m:
+                return float(m.group())
+        return None
+
+    def _get_throttle(self):
+        raw = run("vcgencmd get_throttled 2>/dev/null")
+        if raw == "N/A" or "=" not in raw:
+            return None, []
+        val   = int(raw.split("=")[1], 16)
+        flags = {
+            0:  "Under-voltage detected",
+            1:  "ARM frequency capped",
+            2:  "Currently throttled",
+            3:  "Soft temperature limit active",
+            16: "Under-voltage has occurred",
+            17: "ARM frequency capped (historical)",
+            18: "Throttling has occurred",
+            19: "Soft temperature limit (historical)",
+        }
+        active = [desc for bit, desc in flags.items() if val & (1 << bit)]
+        return val == 0, active
+
+    def render(self):
+        temp_val = self.temperature
+        temp_str = f"{temp_val} °C" if temp_val is not None else "N/A"
+        tc = temp_color(temp_val)
+        if self.throttle_ok is None:
+            throttle_section = '<p class="muted">vcgencmd not available</p>'
+        elif self.throttle_ok:
+            throttle_section = f'{status_dot(True)} <span class="ok-text">No throttling</span>'
+        else:
+            items = "".join(f'<li>{f}</li>' for f in self.throttle_flags)
+            throttle_section = (f'{status_dot(False)} <span class="crit-text">Throttling active</span>'
+                                f'<ul class="flag-list">{items}</ul>')
+        return f"""
+    <div class="card">
+        <div class="card-title">Temperature</div>
+        <div class="big-stat {tc}">{temp_str}</div>
+        <div class="sub">SoC core temperature</div>
+        {bar(temp_val if temp_val else 0, tc) if temp_val else ''}
+        <div style="margin-top:14px">
+        <div class="card-title" style="margin-bottom:10px">Throttle Status</div>
+        {throttle_section}
+        </div>
+    </div>"""
+
+
+class MemoryCard(Card):
+    def collect(self):
+        info = self._parse_meminfo()
+        self.mem_total, self.mem_used, self.mem_avail, self.mem_pct = self._compute_memory(info)
+        self.swap_total, self.swap_used, self.swap_pct = self._compute_swap(info)
+        self.gpu_mem = self._get_gpu_memory()
+
+    def _parse_meminfo(self):
+        raw  = read("/proc/meminfo", "")
+        info = {}
+        for line in raw.splitlines():
+            parts = line.split()
+            if len(parts) >= 2:
+                info[parts[0].rstrip(":")] = int(parts[1])
+        return info
+
+    def _fmt(self, kb):
+        if kb >= 1024 * 1024:
+            return f"{kb / 1024 / 1024:.1f} GB"
+        return f"{kb / 1024:.0f} MB"
+
+    def _compute_memory(self, info):
+        total = info.get("MemTotal", 0)
+        avail = info.get("MemAvailable", 0)
+        used  = total - avail
+        pct   = round(100 * used / total, 1) if total else 0
+        return self._fmt(total), self._fmt(used), self._fmt(avail), pct
+
+    def _compute_swap(self, info):
+        total = info.get("SwapTotal", 0)
+        free  = info.get("SwapFree", 0)
+        used  = total - free
+        pct   = round(100 * used / total, 1) if total else 0
+        return self._fmt(total), self._fmt(used), pct
+
+    def _get_gpu_memory(self):
+        raw = run("vcgencmd get_mem gpu 2>/dev/null")
+        if "=" in raw:
+            return raw.split("=")[1]
+        return None
+
+    def render(self):
+        h = html.escape
+        gpu_html = f'<span class="k">GPU RAM</span><span class="v">{h(self.gpu_mem)}</span>' if self.gpu_mem else ""
+        return f"""
+    <div class="card">
+        <div class="card-title">Memory</div>
+        <div class="big-stat {pct_color(self.mem_pct)}">{self.mem_pct}%</div>
+        <div class="sub">{self.mem_used} used of {self.mem_total} &nbsp;·&nbsp; {self.mem_avail} free</div>
+        {bar(self.mem_pct, pct_color(self.mem_pct))}
+        <div style="margin-top:12px" class="kv-grid">
+        <span class="k">Swap used</span><span class="v">{self.swap_used} / {self.swap_total} ({self.swap_pct}%)</span>
+        {gpu_html}
+        </div>
+    </div>"""
+
+
+class ConnectivityCard(Card):
+    def __init__(self, ping_host="8.8.8.8", ping_count=4):
+        self.ping_host  = ping_host
+        self.ping_count = ping_count
+
+    def collect(self):
+        self.ping_ok, self.ping_loss, self.ping_avg = self._get_ping()
+        self.wan_ip = self._get_wan_ip()
+
+    def _get_ping(self):
+        raw = run(f"ping -c {self.ping_count} -W 2 {self.ping_host} 2>/dev/null")
+        if raw == "N/A":
+            return None, None, None
+        loss_m = re.search(r"(\d+)% packet loss", raw)
+        rtt_m  = re.search(r"rtt min/avg/max/mdev = [\d.]+/([\d.]+)/[\d.]+/[\d.]+ ms", raw)
+        loss   = int(loss_m.group(1)) if loss_m else 100
+        avg    = float(rtt_m.group(1)) if rtt_m else None
+        return loss == 0, loss, avg
+
+    def _get_wan_ip(self):
+        for url in ("https://api.ipify.org", "https://icanhazip.com", "https://ifconfig.me"):
+            result = run(f"curl -s --max-time 5 {url}")
+            if result and result != "N/A" and re.match(r"^\d+\.\d+\.\d+\.\d+$", result.strip()):
+                return result.strip()
+        return None
+
+    def render(self):
+        h = html.escape
+        ping_str      = f"{self.ping_avg} ms" if self.ping_avg else "—"
+        ping_loss_str = f"{self.ping_loss}% loss" if self.ping_loss is not None else "—"
+        ping_ok_val   = self.ping_ok if self.ping_ok is not None else False
+        wan_ip_str    = h(self.wan_ip) if self.wan_ip else "—"
+        return f"""
+    <div class="card">
+        <div class="card-title">Internet Connectivity</div>
+        <div class="card-status">
+        {status_dot(ping_ok_val)} {'Reachable' if ping_ok_val else 'Unreachable'}
+        </div>
+        <div class="kv-grid">
+        <span class="k">Public IP</span><span class="v"><code>{wan_ip_str}</code></span>
+        <span class="k">Ping target</span><span class="v">{self.ping_host}</span>
+        <span class="k">Avg RTT</span><span class="v {('ok' if ping_ok_val else 'crit')}">{ping_str}</span>
+        <span class="k">Packet loss</span><span class="v {('ok' if ping_ok_val else 'crit')}">{ping_loss_str}</span>
+        </div>
+    </div>"""
+
+
+class WifiCard(Card):
+    def collect(self):
+        iface = run("iw dev 2>/dev/null | awk '/Interface/{print $2}' | head -1")
+        if iface == "N/A" or not iface:
+            self.wifi = None
+            return
+        iface = _safe_iface(iface)
+        if not iface:
+            self.wifi = None
+            return
+        self.wifi = {
+            "iface":   iface,
+            "ssid":    run(f"iw {iface} link 2>/dev/null | awk '/SSID/{{print $2}}'") or "N/A",
+            "signal":  run(f"iw {iface} link 2>/dev/null | awk '/signal/{{print $2}}'") or "N/A",
+            "ip":      run(f"ip -4 addr show {iface} 2>/dev/null | awk '/inet /{{print $2}}' | cut -d/ -f1") or "N/A",
+            "bitrate": run(f"iw {iface} link 2>/dev/null | awk '/tx bitrate/{{print $3, $4}}'") or "N/A",
         }
 
-    healthy   = 0
-    unhealthy = 0
-    stopped   = 0
+    def render(self):
+        if not self.wifi:
+            return ""
+        h = html.escape
+        w = self.wifi
+        connected = w["ssid"] != "N/A"
+        return f"""
+        <div class="card">
+          <div class="card-title">Wi-Fi — {h(w['iface'])}</div>
+          <div class="card-status">
+            {status_dot(connected)} {'Connected' if connected else 'Disconnected'}
+          </div>
+          <div class="kv-grid">
+            <span class="k">SSID</span><span class="v">{h(w['ssid'])}</span>
+            <span class="k">IP</span><span class="v"><code>{h(w['ip'])}</code></span>
+            <span class="k">Signal</span><span class="v">{h(w['signal'])} dBm</span>
+            <span class="k">TX Rate</span><span class="v">{h(w['bitrate'])}</span>
+          </div>
+        </div>"""
 
-    for line in raw.splitlines():
-        line_lower = line.lower()
-        if not line_lower.startswith("up"):
-            stopped += 1
-        elif "unhealthy" in line_lower:
-            unhealthy += 1
-        else:
-            healthy += 1
 
-    return {
-        "available": True,
-        "healthy":   healthy,
-        "unhealthy": unhealthy,
-        "stopped":   stopped,
-    }
+class EthernetCard(Card):
+    def collect(self):
+        iface = run("ip link show | awk -F: '/^[0-9]+: e/{print $2}' | tr -d ' ' | cut -d@ -f1 | head -1")
+        if iface == "N/A" or not iface:
+            self.eth = None
+            return
+        iface = _safe_iface(iface)
+        if not iface:
+            self.eth = None
+            return
+        speed = run(f"cat /sys/class/net/{iface}/speed 2>/dev/null")
+        self.eth = {
+            "iface": iface,
+            "state": run(f"cat /sys/class/net/{iface}/operstate 2>/dev/null"),
+            "ip":    run(f"ip -4 addr show {iface} 2>/dev/null | awk '/inet /{{print $2}}' | cut -d/ -f1") or "N/A",
+            "speed": f"{speed} Mbps" if speed not in ("N/A", "-1", "") else "N/A",
+        }
+
+    def render(self):
+        if not self.eth:
+            return ""
+        h = html.escape
+        e = self.eth
+        state_ok = e["state"] == "up"
+        return f"""
+        <div class="card">
+          <div class="card-title">Ethernet — {h(e['iface'])}</div>
+          <div class="card-status">
+            {status_dot(state_ok)} {'Connected' if state_ok else 'Disconnected'}
+          </div>
+          <div class="kv-grid">
+            <span class="k">IP</span><span class="v"><code>{h(e['ip'])}</code></span>
+            <span class="k">Speed</span><span class="v">{h(e['speed'])}</span>
+          </div>
+        </div>"""
 
 
-def get_listening_ports():
-    """Listening TCP/UDP ports from /proc/net — no root required."""
-    import socket as _socket
+class TailscaleCard(Card):
+    def __init__(self, enabled=False, container="tailscale"):
+        self.enabled   = enabled
+        self.container = container
 
-    def hex_to_addr_port(hex_local):
-        hex_addr, hex_port = hex_local.split(":")
-        port = int(hex_port, 16)
-        if len(hex_addr) == 8:
-            packed = bytes.fromhex(hex_addr)[::-1]
-            addr = _socket.inet_ntop(_socket.AF_INET, packed)
-        else:
-            b = bytes.fromhex(hex_addr)
-            reordered = b""
-            for i in range(0, 16, 4):
-                reordered += b[i:i+4][::-1]
-            addr = _socket.inet_ntop(_socket.AF_INET6, reordered)
-        if addr in ("0.0.0.0", "::", "::ffff:0.0.0.0"):
-            addr = "*"
-        return addr, port
+    def collect(self):
+        if not self.enabled:
+            self.tailscale = None
+            return
 
-    seen = set()
-    ports = []
-    proc_files = [
-        ("tcp", "/proc/net/tcp"),
-        ("tcp", "/proc/net/tcp6"),
-        ("udp", "/proc/net/udp"),
-        ("udp", "/proc/net/udp6"),
-    ]
-    for proto, fpath in proc_files:
+        sources = [
+            ("native", ["tailscale", "status", "--json"]),
+            ("docker", ["docker", "exec", self.container, "tailscale", "status", "--json"]),
+        ]
+        raw    = None
+        source = "none"
+        for label, cmd in sources:
+            raw = run_cmd(cmd)
+            if raw:
+                source = label
+                break
+
+        if not raw:
+            self.tailscale = {
+                "available": False, "source": source,
+                "state": "unavailable",
+                "error": "tailscale not found natively or via Docker",
+            }
+            return
+
         try:
-            lines = Path(fpath).read_text().splitlines()[1:]
-        except OSError:
-            continue
-        for line in lines:
-            fields = line.split()
-            if len(fields) < 4:
-                continue
-            state = fields[3]
-            if proto == "tcp" and state != "0A":
-                continue
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            self.tailscale = {
+                "available": False, "source": source,
+                "state": "invalid",
+                "error": "tailscale returned invalid JSON",
+            }
+            return
+
+        self_info    = data.get("Self") or {}
+        peers        = list((data.get("Peer") or {}).values())
+        online_peers = [p for p in peers if p.get("Online")]
+        active_peers = [p for p in peers if p.get("Active")]
+        relays = {}
+        for p in peers:
+            relay = p.get("Relay")
+            if relay:
+                relays[relay] = relays.get(relay, 0) + 1
+
+        self.tailscale = {
+            "available":    True,
+            "source":       source,
+            "state":        data.get("BackendState", "unknown"),
+            "hostname":     self_info.get("HostName", "N/A"),
+            "dns":          self_info.get("DNSName", "N/A").rstrip("."),
+            "ips":          self_info.get("TailscaleIPs", []),
+            "online_peers": len(online_peers),
+            "total_peers":  len(peers),
+            "active_peers": len(active_peers),
+            "relays":       relays,
+        }
+
+    def render(self):
+        if not self.tailscale:
+            return ""
+        h  = html.escape
+        ts = self.tailscale
+        state     = ts.get("state", "unknown")
+        available = ts.get("available", False)
+        state_ok  = available and state == "Running"
+        ips          = ", ".join(ts.get("ips") or ["N/A"])
+        relay_summary = ", ".join(f"{name}: {count}" for name, count in sorted(ts.get("relays", {}).items())) or "None"
+        error_html = ""
+        if ts.get("error"):
+            error_html = f'<span class="k">Error</span><span class="v crit">{h(ts["error"])}</span>'
+        return f"""
+        <div class="card">
+          <div class="card-title">Tailscale</div>
+          <div class="card-status">
+            {status_dot(state_ok)} {h(state)}
+          </div>
+          <div class="kv-grid">
+            <span class="k">Source</span><span class="v">{h(ts.get('source', 'unknown'))}</span>
+            <span class="k">Device</span><span class="v">{h(ts.get('hostname', 'N/A'))}</span>
+            <span class="k">DNS</span><span class="v"><code>{h(ts.get('dns', 'N/A'))}</code></span>
+            <span class="k">IP</span><span class="v"><code>{h(ips)}</code></span>
+            <span class="k">Peers</span><span class="v">{ts.get('online_peers', 0)} / {ts.get('total_peers', 0)} online</span>
+            <span class="k">Active</span><span class="v">{ts.get('active_peers', 0)}</span>
+            <span class="k">Relays</span><span class="v">{h(relay_summary)}</span>
+            {error_html}
+          </div>
+        </div>"""
+
+
+class DockerCard(Card):
+    def __init__(self, enabled=False):
+        self.enabled = enabled
+
+    def collect(self):
+        if not self.enabled:
+            self.docker = None
+            return
+
+        raw = run_cmd(["docker", "ps", "-a", "--format", "{{.Status}}"])
+        if raw is None:
+            self.docker = {
+                "available": False,
+                "error": "docker not available (is the user in the docker group?)",
+            }
+            return
+
+        healthy = unhealthy = stopped = 0
+        for line in raw.splitlines():
+            line_lower = line.lower()
+            if not line_lower.startswith("up"):
+                stopped += 1
+            elif "unhealthy" in line_lower:
+                unhealthy += 1
+            else:
+                healthy += 1
+
+        self.docker = {
+            "available": True,
+            "healthy":   healthy,
+            "unhealthy": unhealthy,
+            "stopped":   stopped,
+        }
+
+    def render(self):
+        if not self.docker:
+            return ""
+        h  = html.escape
+        dk = self.docker
+        if not dk.get("available"):
+            return f"""
+        <div class="card">
+          <div class="card-title">Docker</div>
+          <p class="muted">{h(dk.get('error', 'unavailable'))}</p>
+        </div>"""
+        dk_total = dk["healthy"] + dk["unhealthy"] + dk["stopped"]
+        dk_pct   = round(100 * dk["healthy"] / dk_total, 1) if dk_total else None
+        dk_cls   = invert_pct_color(dk_pct) if dk_pct is not None else "muted"
+        dk_str   = f"{dk_pct}%" if dk_pct is not None else "N/A"
+        return f"""
+        <div class="card">
+          <div class="card-title">Docker</div>
+          <div class="big-stat {dk_cls}">{dk_str}</div>
+          <div class="sub">containers running healthy</div>
+          <div style="margin-top:12px" class="kv-grid">
+            <span class="k">Running</span><span class="v ok-text">{dk['healthy']}</span>
+            <span class="k">Unhealthy</span><span class="v {'warn-text' if dk['unhealthy'] > 0 else ''}">{dk['unhealthy']}</span>
+            <span class="k">Stopped</span><span class="v {'crit-text' if dk['stopped'] > 0 else ''}">{dk['stopped']}</span>
+          </div>
+        </div>"""
+
+
+class DiskCard(Card):
+    def collect(self):
+        self.disks = []
+        raw = run("df -h --output=target,size,used,avail,pcent -x tmpfs -x devtmpfs -x squashfs")
+        for line in raw.splitlines()[1:]:
+            parts = line.split()
+            if len(parts) == 5:
+                mount, size, used, avail, pct_str = parts
+                self.disks.append({
+                    "mount": mount, "size": size, "used": used,
+                    "avail": avail, "pct": int(pct_str.rstrip("%")),
+                })
+
+    def render(self):
+        h = html.escape
+        disk_rows = ""
+        for dk in self.disks:
+            c = pct_color(dk["pct"])
+            disk_rows += f"""
+        <tr>
+          <td><code>{h(dk['mount'])}</code></td>
+          <td>{h(dk['size'])}</td>
+          <td>{h(dk['used'])}</td>
+          <td>{h(dk['avail'])}</td>
+          <td class="{c}">{dk['pct']}%</td>
+          <td style="min-width:120px">{bar(dk['pct'], c)}</td>
+        </tr>"""
+        return f"""
+    <div class="card">
+        <div class="card-title">Disk Usage</div>
+        <table>
+        <thead><tr><th>Mount</th><th>Size</th><th>Used</th><th>Avail</th><th>Use%</th><th></th></tr></thead>
+        <tbody>{disk_rows}</tbody>
+        </table>
+    </div>"""
+
+
+class PortsCard(Card):
+    def collect(self):
+        import socket as _socket
+
+        def hex_to_addr_port(hex_local):
+            hex_addr, hex_port = hex_local.split(":")
+            port = int(hex_port, 16)
+            if len(hex_addr) == 8:
+                packed = bytes.fromhex(hex_addr)[::-1]
+                addr   = _socket.inet_ntop(_socket.AF_INET, packed)
+            else:
+                b         = bytes.fromhex(hex_addr)
+                reordered = b""
+                for i in range(0, 16, 4):
+                    reordered += b[i:i+4][::-1]
+                addr = _socket.inet_ntop(_socket.AF_INET6, reordered)
+            if addr in ("0.0.0.0", "::", "::ffff:0.0.0.0"):
+                addr = "*"
+            return addr, port
+
+        seen  = set()
+        ports = []
+        for proto, fpath in [("tcp", "/proc/net/tcp"), ("tcp", "/proc/net/tcp6"),
+                              ("udp", "/proc/net/udp"), ("udp", "/proc/net/udp6")]:
             try:
-                addr, port = hex_to_addr_port(fields[1])
-            except Exception:
+                lines = Path(fpath).read_text().splitlines()[1:]
+            except OSError:
                 continue
-            key = f"{proto}/{port}"
-            if key not in seen:
-                seen.add(key)
-                ports.append({"proto": proto, "port": str(port), "addr": addr})
+            for line in lines:
+                fields = line.split()
+                if len(fields) < 4:
+                    continue
+                if proto == "tcp" and fields[3] != "0A":
+                    continue
+                try:
+                    addr, port = hex_to_addr_port(fields[1])
+                except Exception:
+                    continue
+                key = f"{proto}/{port}"
+                if key not in seen:
+                    seen.add(key)
+                    ports.append({"proto": proto, "port": str(port), "addr": addr})
 
-    ports.sort(key=lambda p: int(p["port"]))
-    return ports
+        self.ports = sorted(ports, key=lambda p: int(p["port"]))
+
+    def render(self):
+        h = html.escape
+        port_rows = ""
+        for p in self.ports:
+            port_rows += (f"<tr><td><span class='proto-badge'>{h(p['proto'])}</span></td>"
+                          f"<td><strong>{h(p['port'])}</strong></td>"
+                          f"<td><code>{h(p['addr'])}</code></td></tr>")
+        return f"""
+    <div class="card">
+        <div class="card-title">Listening Ports</div>
+        <table>
+        <thead><tr><th>Proto</th><th>Port</th><th>Address</th></tr></thead>
+        <tbody>{port_rows if port_rows else '<tr><td colspan="3" class="muted">None found</td></tr>'}</tbody>
+        </table>
+    </div>"""
 
 
-# ── HTML helpers ──────────────────────────────────────────────────────────────
+class ProcessesCard(Card):
+    def collect(self):
+        raw   = run("top -bn2 -d0.5 | grep -A 20 'PID' | tail -20")
+        procs = []
+        for line in raw.splitlines():
+            parts = line.split()
+            if len(parts) >= 12 and parts[0].isdigit():
+                procs.append({"pid": parts[0], "cpu": parts[8], "mem": parts[9], "name": parts[11]})
+        try:
+            procs.sort(key=lambda p: float(p["cpu"]), reverse=True)
+        except ValueError:
+            pass
+        self.processes = procs[:5]
+
+    def render(self):
+        h = html.escape
+        proc_rows = ""
+        for p in self.processes:
+            proc_rows += (f"<tr><td>{h(p['pid'])}</td><td>{h(p['cpu'])}%</td>"
+                          f"<td>{h(p['mem'])}%</td><td><code>{h(p['name'])}</code></td></tr>")
+        return f"""
+    <div class="card">
+        <div class="card-title">Top Processes by CPU</div>
+        <table>
+        <thead><tr><th>PID</th><th>CPU %</th><th>MEM %</th><th>Command</th></tr></thead>
+        <tbody>{proc_rows}</tbody>
+        </table>
+    </div>"""
+
+
+# ── CSS / JS ──────────────────────────────────────────────────────────────────
 
 def _css():
     return """\
@@ -664,271 +979,15 @@ def _js():
 
 # ── HTML generation ───────────────────────────────────────────────────────────
 
-def pct_color(pct):
-    if pct < 60:   
-        return "ok"
-    if pct < 85:   
-        return "warn"
-    return "crit"
-
-def invert_pct_color(pct):
-    """For success-rate metrics where higher is better."""
-    if pct >= 100: 
-        return "ok"
-    if pct >= 90:  
-        return "warn"
-    return "crit"
-
-def temp_color(t):
-    if t is None: 
-        return "ok"
-    if t < 65:    
-        return "ok"
-    if t < 80:    
-        return "warn"
-    return "crit"
-
-def bar(pct, cls="ok"):
-    pct = min(max(pct, 0), 100)
-    return f'<div class="bar-track"><div class="bar-fill {cls}" style="width:{pct}%"></div></div>'
-
-def status_dot(ok):
-    cls = "dot-ok" if ok else "dot-crit"
-    return f'<span class="dot {cls}"></span>'
-
-def build_html(d):
+def build_html(cards, hostname, uptime, pretty_os, kernel, arch, date_str, time_str):
     h = html.escape
-
-    # cpu card
-    la1, la5, la15 = d["load"]
-    volt_html = f'<span class="k">Core voltage</span><span class="v">{h(d["voltage"])}</span>' if d["voltage"] else ""
-    cpu_html = f"""
-    <div class="card">
-        <div class="card-title">CPU Usage</div>
-        <div class="big-stat {pct_color(d['cpu_pct'])}">{d['cpu_pct']}%</div>
-        <div class="sub">Load avg &nbsp; {h(la1)} &nbsp; {h(la5)} &nbsp; {h(la15)} &nbsp; (1 / 5 / 15 min)</div>
-        {bar(d['cpu_pct'], pct_color(d['cpu_pct']))}
-        <div style="margin-top:12px" class="kv-grid">
-        <span class="k">Frequency</span><span class="v">{h(d['cpu_freq'])}</span>
-        {volt_html}
-        </div>
-    </div>"""
-
-    # temperature card
-    temp_val = d["temperature"]
-    temp_str = f"{temp_val} °C" if temp_val is not None else "N/A"
-    tc = temp_color(temp_val)
-    throttle_ok, throttle_flags = d["throttle"]
-    if throttle_ok is None:
-        throttle_section = '<p class="muted">vcgencmd not available</p>'
-    elif throttle_ok:
-        throttle_section = f'{status_dot(True)} <span class="ok-text">No throttling</span>'
-    else:
-        items = "".join(f'<li>{f}</li>' for f in throttle_flags)
-        throttle_section = (f'{status_dot(False)} <span class="crit-text">Throttling active</span>'
-                            f'<ul class="flag-list">{items}</ul>')
-    temp_html = f"""
-    <div class="card">
-        <div class="card-title">Temperature</div>
-        <div class="big-stat {tc}">{temp_str}</div>
-        <div class="sub">SoC core temperature</div>
-        {bar(temp_val if temp_val else 0, tc) if temp_val else ''}
-        <div style="margin-top:14px">
-        <div class="card-title" style="margin-bottom:10px">Throttle Status</div>
-        {throttle_section}
-        </div>
-    </div>"""
-
-    # memory card
-    mem_total, mem_used, mem_avail, mem_pct = d["memory"]
-    swap_total, swap_used, swap_pct = d["swap"]
-    gpu_html  = f'<span class="k">GPU RAM</span><span class="v">{h(d["gpu_mem"])}</span>' if d["gpu_mem"] else ""
-    memory_html = f"""
-    <div class="card">
-        <div class="card-title">Memory</div>
-        <div class="big-stat {pct_color(mem_pct)}">{mem_pct}%</div>
-        <div class="sub">{mem_used} used of {mem_total} &nbsp;·&nbsp; {mem_avail} free</div>
-        {bar(mem_pct, pct_color(mem_pct))}
-        <div style="margin-top:12px" class="kv-grid">
-        <span class="k">Swap used</span><span class="v">{swap_used} / {swap_total} ({swap_pct}%)</span>
-        {gpu_html}
-        </div>
-    </div>"""
-
-    # internet connectivity card
-    ping_ok, ping_loss, ping_avg = d["ping"]
-    ping_str      = f"{ping_avg} ms" if ping_avg else "—"
-    ping_loss_str = f"{ping_loss}% loss" if ping_loss is not None else "—"
-    ping_ok_val   = ping_ok if ping_ok is not None else False
-    wan_ip_str    = h(d["wan_ip"]) if d.get("wan_ip") else "—"
-    connectivity_html = f"""
-    <div class="card">
-        <div class="card-title">Internet Connectivity</div>
-        <div class="card-status">
-        {status_dot(ping_ok_val)} {'Reachable' if ping_ok_val else 'Unreachable'}
-        </div>
-        <div class="kv-grid">
-        <span class="k">Public IP</span><span class="v"><code>{wan_ip_str}</code></span>
-        <span class="k">Ping target</span><span class="v">{PING_HOST}</span>
-        <span class="k">Avg RTT</span><span class="v {('ok' if ping_ok_val else 'crit')}">{ping_str}</span>
-        <span class="k">Packet loss</span><span class="v {('ok' if ping_ok_val else 'crit')}">{ping_loss_str}</span>
-        </div>
-    </div>"""
-
-    # wifi card
-    wifi_html = ""
-    if d["wifi"]:
-        w = d["wifi"]
-        wifi_connected = w["ssid"] != "N/A"
-        wifi_html = f"""
-        <div class="card">
-          <div class="card-title">Wi-Fi — {h(w['iface'])}</div>
-          <div class="card-status">
-            {status_dot(wifi_connected)} {'Connected' if wifi_connected else 'Disconnected'}
-          </div>
-          <div class="kv-grid">
-            <span class="k">SSID</span><span class="v">{h(w['ssid'])}</span>
-            <span class="k">IP</span><span class="v"><code>{h(w['ip'])}</code></span>
-            <span class="k">Signal</span><span class="v">{h(w['signal'])} dBm</span>
-            <span class="k">TX Rate</span><span class="v">{h(w['bitrate'])}</span>
-          </div>
-        </div>"""
-
-    # ethernet card
-    eth_html = ""
-    if d["eth"]:
-        e = d["eth"]
-        state_ok = e["state"] == "up"
-        eth_html = f"""
-        <div class="card">
-          <div class="card-title">Ethernet — {h(e['iface'])}</div>
-          <div class="card-status">
-            {status_dot(state_ok)} {'Connected' if state_ok else 'Disconnected'}
-          </div>
-          <div class="kv-grid">
-            <span class="k">IP</span><span class="v"><code>{h(e['ip'])}</code></span>
-            <span class="k">Speed</span><span class="v">{h(e['speed'])}</span>
-          </div>
-        </div>"""
-
-    # tailscale card
-    tailscale_html = ""
-    if d.get("tailscale"):
-        ts = d["tailscale"]
-        state = ts.get("state", "unknown")
-        available = ts.get("available", False)
-        state_ok = available and state == "Running"
-        ips = ", ".join(ts.get("ips") or ["N/A"])
-        relay_summary = ", ".join(f"{name}: {count}" for name, count in sorted(ts.get("relays", {}).items())) or "None"
-        error_html = ""
-        if ts.get("error"):
-            error_html = f'<span class="k">Error</span><span class="v crit">{h(ts["error"])}</span>'
-        tailscale_html = f"""
-        <div class="card">
-          <div class="card-title">Tailscale</div>
-          <div class="card-status">
-            {status_dot(state_ok)} {h(state)}
-          </div>          
-          <div class="kv-grid">
-            <span class="k">Source</span><span class="v">{h(ts.get('source', 'unknown'))}</span>
-            <span class="k">Device</span><span class="v">{h(ts.get('hostname', 'N/A'))}</span>
-            <span class="k">DNS</span><span class="v"><code>{h(ts.get('dns', 'N/A'))}</code></span>
-            <span class="k">IP</span><span class="v"><code>{h(ips)}</code></span>
-            <span class="k">Peers</span><span class="v">{ts.get('online_peers', 0)} / {ts.get('total_peers', 0)} online</span>
-            <span class="k">Active</span><span class="v">{ts.get('active_peers', 0)}</span>
-            <span class="k">Relays</span><span class="v">{h(relay_summary)}</span>
-            {error_html}
-          </div>
-        </div>"""
-
-    # docker card
-    docker_html = ""
-    if d.get("docker"):
-        dk = d["docker"]
-        if not dk.get("available"):
-            docker_html = f"""
-        <div class="card">
-          <div class="card-title">Docker</div>
-          <p class="muted">{h(dk.get('error', 'unavailable'))}</p>
-        </div>"""
-        else:
-            dk_total = dk["healthy"] + dk["unhealthy"] + dk["stopped"]
-            dk_pct   = round(100 * dk["healthy"] / dk_total, 1) if dk_total else None
-            dk_cls   = invert_pct_color(dk_pct) if dk_pct is not None else "muted"
-            dk_str   = f"{dk_pct}%" if dk_pct is not None else "N/A"
-            docker_html = f"""
-        <div class="card">
-          <div class="card-title">Docker</div>
-          <div class="big-stat {dk_cls}">{dk_str}</div>
-          <div class="sub">containers running healthy</div>
-          <div style="margin-top:12px" class="kv-grid">
-            <span class="k">Running</span><span class="v ok-text">{dk['healthy']}</span>
-            <span class="k">Unhealthy</span><span class="v {'warn-text' if dk['unhealthy'] > 0 else ''}">{dk['unhealthy']}</span>
-            <span class="k">Stopped</span><span class="v {'crit-text' if dk['stopped'] > 0 else ''}">{dk['stopped']}</span>
-          </div>
-        </div>"""
-
-    # disks card
-    disk_rows = ""
-    for dk in d["disks"]:
-        c = pct_color(dk["pct"])
-        disk_rows += f"""
-        <tr>
-          <td><code>{h(dk['mount'])}</code></td>
-          <td>{h(dk['size'])}</td>
-          <td>{h(dk['used'])}</td>
-          <td>{h(dk['avail'])}</td>
-          <td class="{c}">{dk['pct']}%</td>
-          <td style="min-width:120px">{bar(dk['pct'], c)}</td>
-        </tr>"""
-    disk_html = f"""
-    <div class="card">
-        <div class="card-title">Disk Usage</div>
-        <table>
-        <thead><tr><th>Mount</th><th>Size</th><th>Used</th><th>Avail</th><th>Use%</th><th></th></tr></thead>
-        <tbody>{disk_rows}</tbody>
-        </table>
-    </div>"""
-
-    # ports card
-    port_rows = ""
-    for p in d["ports"]:
-        port_rows += (f"<tr><td><span class='proto-badge'>{h(p['proto'])}</span></td>"
-                      f"<td><strong>{h(p['port'])}</strong></td>"
-                      f"<td><code>{h(p['addr'])}</code></td></tr>")
-    ports_html = f"""
-    <div class="card">
-        <div class="card-title">Listening Ports</div>
-        <table>
-        <thead><tr><th>Proto</th><th>Port</th><th>Address</th></tr></thead>
-        <tbody>{port_rows if port_rows else '<tr><td colspan="3" class="muted">None found</td></tr>'}</tbody>
-        </table>
-    </div>"""
-
-    # processes card
-    proc_rows = ""
-    for p in d["processes"]:
-        proc_rows += (f"<tr><td>{h(p['pid'])}</td><td>{h(p['cpu'])}%</td>"
-                      f"<td>{h(p['mem'])}%</td><td><code>{h(p['name'])}</code></td></tr>")
-    procs_html = f"""
-    <div class="card">
-        <div class="card-title">Top Processes by CPU</div>
-        <table>
-        <thead><tr><th>PID</th><th>CPU %</th><th>MEM %</th><th>Command</th></tr></thead>
-        <tbody>{proc_rows}</tbody>
-        </table>
-    </div>"""
-
-    date_str, time_str = d["datetime"]
-    pretty_os, kernel, arch = d["os"]
-
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="refresh" content="300">
-<title>pi monitor — {h(d['hostname'])}</title>
+<title>pi monitor — {h(hostname)}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -939,8 +998,8 @@ def build_html(d):
 
 <header class="header">
   <div>
-    <div class="hostname"><span>●</span> {h(d['hostname'])}</div>
-    <div style="margin-top:4px;font-size:12px;color:var(--muted);">up {h(d['uptime'])} &nbsp;·&nbsp; {h(pretty_os)} &nbsp;·&nbsp; {h(kernel)} &nbsp;·&nbsp; {h(arch)}</div>
+    <div class="hostname"><span>●</span> {h(hostname)}</div>
+    <div style="margin-top:4px;font-size:12px;color:var(--muted);">up {h(uptime)} &nbsp;·&nbsp; {h(pretty_os)} &nbsp;·&nbsp; {h(kernel)} &nbsp;·&nbsp; {h(arch)}</div>
   </div>
   <div style="display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap">
     <button class="theme-btn" onclick="toggleTheme()" id="themeBtn">☾ Dark</button>
@@ -953,23 +1012,23 @@ def build_html(d):
 </header>
 
 <div class="grid">
-{cpu_html}
-{temp_html}
-{memory_html}
-{connectivity_html}
-{wifi_html}
-{eth_html}
-{tailscale_html}
-{docker_html}
+{cards['cpu'].render()}
+{cards['temp'].render()}
+{cards['memory'].render()}
+{cards['connectivity'].render()}
+{cards['wifi'].render()}
+{cards['eth'].render()}
+{cards['tailscale'].render()}
+{cards['docker'].render()}
 </div>
 
 <div class="grid-wide">
-{disk_html}
+{cards['disks'].render()}
 </div>
 
 <div class="grid" style="margin-top:16px">
-{ports_html}
-{procs_html}
+{cards['ports'].render()}
+{cards['processes'].render()}
 </div>
 
 <div class="footer">generated by pi_monitor.py &nbsp;·&nbsp; {date_str} {time_str}</div>
@@ -981,61 +1040,60 @@ def build_html(d):
 </body>
 </html>"""
 
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
     import argparse
 
-    global OUTPUT_PATH, PING_HOST, PING_COUNT, TAILSCALE_CONTAINER
-
     parser = argparse.ArgumentParser(
         description="Generate a static HTML monitoring page for this Raspberry Pi."
     )
-    parser.add_argument("--output", "-o", metavar="PATH", default=None, help=f"Where to write the HTML file (default: {OUTPUT_PATH})")
-    parser.add_argument("--ping-host", metavar="HOST", default=None, help=f"Host to ping for connectivity check (default: {PING_HOST})")
-    parser.add_argument("--ping-count", metavar="N", type=int, default=None, help=f"Number of ping packets (default: {PING_COUNT})")
-    parser.add_argument("--tailscale", action="store_true", default=TAILSCALE_ENABLED, help="Include Tailscale status panel")
-    parser.add_argument("--tailscale-container", metavar="NAME", default=None, help=f"Docker container name for Tailscale (default: {TAILSCALE_CONTAINER})")
-    parser.add_argument("--docker", action="store_true", default=DOCKER_ENABLED, help="Include a Docker container status panel (default: off). Requires the running user to be in the docker group.")
+    parser.add_argument("--output", "-o", metavar="PATH", default=None,
+                        help=f"Where to write the HTML file (default: {OUTPUT_PATH})")
+    parser.add_argument("--ping-host", metavar="HOST", default=None,
+                        help=f"Host to ping for connectivity check (default: {PING_HOST})")
+    parser.add_argument("--ping-count", metavar="N", type=int, default=None,
+                        help=f"Number of ping packets (default: {PING_COUNT})")
+    parser.add_argument("--tailscale", action="store_true", default=TAILSCALE_ENABLED,
+                        help="Include Tailscale status panel")
+    parser.add_argument("--tailscale-container", metavar="NAME", default=None,
+                        help=f"Docker container name for Tailscale (default: {TAILSCALE_CONTAINER})")
+    parser.add_argument("--docker", action="store_true", default=DOCKER_ENABLED,
+                        help="Include a Docker container status panel (default: off). Requires the running user to be in the docker group.")
 
     args = parser.parse_args()
 
     output_path = Path(args.output) if args.output else OUTPUT_PATH
-    if args.ping_host:
-        PING_HOST = args.ping_host
-    if args.ping_count:
-        PING_COUNT = args.ping_count
-    if args.tailscale_container:
-        TAILSCALE_CONTAINER = args.tailscale_container
+    ping_host   = args.ping_host or PING_HOST
+    ping_count  = args.ping_count or PING_COUNT
+    ts_container = args.tailscale_container or TAILSCALE_CONTAINER
 
-    data = {
-        "hostname":     get_hostname(),
-        "datetime":     get_datetime(),
-        "uptime":       get_uptime(),
-        "cpu_pct":      get_cpu_percent(),
-        "load":         get_load_avg(),
-        "cpu_freq":     get_cpu_freq(),
-        "temperature":  get_temperature(),
-        "throttle":     get_throttle(),
-        "memory":       get_memory(),
-        "swap":         get_swap(),
-        "disks":        get_disks(),
-        "wifi":         get_wifi(),
-        "eth":          get_ethernet(),
-        "tailscale":    get_tailscale() if args.tailscale else None,
-        "docker":       get_docker() if args.docker else None,
-        "ping":         get_ping(),
-        "wan_ip":       get_wan_ip(),
-        "processes":    get_processes(),
-        "gpu_mem":      get_gpu_memory(),
-        "voltage":      get_voltage(),
-        "os":           get_os_info(),
-        "ports":        get_listening_ports(),
+    cards = {
+        "cpu":          CpuCard(),
+        "temp":         TemperatureCard(),
+        "memory":       MemoryCard(),
+        "connectivity": ConnectivityCard(ping_host=ping_host, ping_count=ping_count),
+        "wifi":         WifiCard(),
+        "eth":          EthernetCard(),
+        "tailscale":    TailscaleCard(enabled=args.tailscale, container=ts_container),
+        "docker":       DockerCard(enabled=args.docker),
+        "disks":        DiskCard(),
+        "ports":        PortsCard(),
+        "processes":    ProcessesCard(),
     }
 
-    html = build_html(data)
+    for c in cards.values():
+        c.collect()
+
+    hostname            = get_hostname()
+    date_str, time_str  = get_datetime()
+    uptime              = get_uptime()
+    pretty_os, kernel, arch = get_os_info()
+
+    page = build_html(cards, hostname, uptime, pretty_os, kernel, arch, date_str, time_str)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(html, encoding="utf-8")
+    output_path.write_text(page, encoding="utf-8")
     print(f"[pi_monitor] Written to {output_path}")
 
 if __name__ == "__main__":
