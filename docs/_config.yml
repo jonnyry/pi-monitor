@@ -1,3 +1,2 @@
 title: pi-monitor
 description: A single-file Python script that generates a static HTML health dashboard for a Raspberry Pi.
-theme: minima
