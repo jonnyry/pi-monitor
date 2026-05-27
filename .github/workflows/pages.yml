@@ -18,18 +18,17 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Prepare site
         run: |
-          cp README.md docs/index.md
+          { head -1 README.md; printf '\n[View source on GitHub](https://github.com/jonnyry/pi-monitor)\n\n'; tail -n +2 README.md; } > docs/index.md
           sed -i 's|docs/images/|images/|g' docs/index.md
-          printf '\n---\n[View source on GitHub](https://github.com/jonnyry/pi-monitor)\n' >> docs/index.md
-      - uses: actions/configure-pages@v5
+      - uses: actions/configure-pages@v6
       - uses: actions/jekyll-build-pages@v1
         with:
           source: ./docs
           destination: ./_site
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
 
   deploy:
     environment:
@@ -39,4 +38,4 @@ jobs:
     needs: build
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
